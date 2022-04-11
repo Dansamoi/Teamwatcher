@@ -1,4 +1,6 @@
 #pragma once
+#ifndef CREATEUI_H
+#define CREATEUI_H
 #include <windows.h>
 class CreateUI
 {
@@ -10,3 +12,4 @@ public:
     HWND static CreateInputBox(LPCWSTR text, INT xPos, INT yPos, INT width, INT height, HWND parrent);
 };
 
+#endif // CREATEUI_H

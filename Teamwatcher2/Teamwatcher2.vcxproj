@@ -139,15 +139,22 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="Clipboard.h" />
     <ClInclude Include="CreateUI.h" />
+    <ClInclude Include="Data.h" />
     <ClInclude Include="framework.h" />
+    <ClInclude Include="Password.h" />
     <ClInclude Include="Resource.h" />
+    <ClInclude Include="Screen.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="Teamwatcher2.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Clipboard.cpp" />
     <ClCompile Include="CreateUI.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Password.cpp" />
+    <ClCompile Include="Screen.cpp" />
     <ClCompile Include="Teamwatcher2.cpp" />
   </ItemGroup>
   <ItemGroup>
