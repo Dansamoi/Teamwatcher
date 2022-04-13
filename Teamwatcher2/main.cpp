@@ -15,6 +15,7 @@
 #include "Password.h"
 #include "Clipboard.h"
 #include "Data.h"
+#include "Screen.h"
 #pragma comment(lib,"WS2_32")
 
 LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, LPARAM lparam);
@@ -94,6 +95,11 @@ MSG msgClient{};
 MSG msgServer{};
 
 HWND client_hwnd, server_hwnd;
+
+std::vector<std::uint8_t> Pixels;
+
+HWND screen_hwnd;
+HBITMAP hScreenImage;
 
 // Function that receive data
 // from client
@@ -303,6 +309,14 @@ void createAllUI(HWND hwnd) {
     host_menu.push_back(hostPassText);
     Menus[HOST_MENU] = host_menu;
 
+    screen_hwnd = CreateWindow(
+        L"Static",
+        NULL,
+        WS_VISIBLE | WS_CHILD | SS_BITMAP,
+        400, 60, 1280, 720, hwnd,
+        NULL, NULL, NULL);
+
+    client_menu.push_back(screen_hwnd);
     client_menu.push_back(CreateUI::CreateTextBox(L"Chat", X, Y + 30, 200, 25, hwnd));
     chatText = CreateUI::CreateInputBox(L"", X, Y + 60, 300, 600, hwnd);
     client_menu.push_back(chatText);
@@ -331,6 +345,8 @@ void visible(int menuNum) {
 
 int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousInstance, _In_ LPSTR cmdLine, _In_ INT cmdShow) {
     
+    Screen::GetScreenShot();
+
     // initializing Winsock
     WSADATA wsaData;
     
@@ -563,8 +579,9 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
 
             bind(sTCP, (PSOCKADDR)&InternetAddr, sizeof(InternetAddr));
 
-            if (listen(sTCP, 5) == SOCKET_ERROR)
+            if (listen(sTCP, 1) == SOCKET_ERROR)
             {
+                error = WSAGetLastError();
                 printf("listen() failed with error %d\n", WSAGetLastError());
                 MessageBox(NULL, TEXT("listen() failed with error"), NULL, MB_ICONERROR);
                 //return 1;
