@@ -15,6 +15,7 @@
 #include "Password.h"
 #include "Clipboard.h"
 #include "Data.h"
+#include "Screen.h"
 #pragma comment(lib,"WS2_32")
 
 LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, LPARAM lparam);
@@ -47,7 +48,7 @@ int gwstatPass = 0;
 int port;
 char* ip;
 
-int error;
+int error, lasterror = 0;
 
 SOCKADDR_IN InternetAddr;
 ULONG NonBlock;
@@ -93,7 +94,18 @@ MSG msg{};
 MSG msgClient{};
 MSG msgServer{};
 
-HWND client_hwnd, server_hwnd;
+HWND client_hwnd, server_hwnd, hScreenWindow;
+
+PAINTSTRUCT ps = { 0 };
+HDC hDC;
+RECT rc = { 0 };
+
+int wError;
+
+vector<INT> keysPressed;
+vector<char*> messages;
+
+HBITMAP screenshot;
 
 // Function that receive data
 // from client
@@ -230,22 +242,36 @@ DWORD WINAPI clientSend(LPVOID lpParam)
 
         // Input message client
         // wants to send to server
-        gets_s(buffer);
-
-        // If sending failed
-        // return -1
-        if (send(server,
-            buffer,
-            DATA_BUFSIZE, 0)
-            == SOCKET_ERROR) {
-            cout << "send failed with error: "
-                << WSAGetLastError() << endl;
-            return -1;
+        if (keysPressed.size() != 0)
+        {
+            if (send(server,
+                (char*)&keysPressed[0],
+                4, 0)
+                == SOCKET_ERROR) {
+                cout << "send failed with error: "
+                    << WSAGetLastError() << endl;
+                keysPressed.erase(keysPressed.begin());
+                return -1;
+            }
+            keysPressed.erase(keysPressed.begin());
+        
+        }
+        else if (messages.size() != 0)
+        {
+            if (send(server,
+                messages[0],
+                sizeof(messages[0]), 0)
+                == SOCKET_ERROR) {
+                cout << "send failed with error: "
+                    << WSAGetLastError() << endl;
+                messages.erase(messages.begin());
+                return -1;
+            }
+            messages.erase(messages.begin());
         }
 
         // If client exit
-        if (strcmp(buffer, "exit")
-            == 0) {
+        if (strcmp(buffer, "exit") == 0) {
             cout << "Thank you for using the application"
                 << endl;
             break;
@@ -255,7 +281,6 @@ DWORD WINAPI clientSend(LPVOID lpParam)
 }
 
 void createAllUI(HWND hwnd) {
-    
     vector<HWND> main_menu, join_menu, host_menu, server_menu, client_menu;
 
     // Main Menu
@@ -303,6 +328,15 @@ void createAllUI(HWND hwnd) {
     host_menu.push_back(hostPassText);
     Menus[HOST_MENU] = host_menu;
 
+    hScreenWindow = CreateWindow(
+        L"Static",
+        NULL,
+        WS_VISIBLE | WS_CHILD | SS_BITMAP | WS_BORDER,
+        400, 60, 1280, 720,
+        hwnd,
+        NULL, NULL, NULL
+    );
+    client_menu.push_back(hScreenWindow);
     client_menu.push_back(CreateUI::CreateTextBox(L"Chat", X, Y + 30, 200, 25, hwnd));
     chatText = CreateUI::CreateInputBox(L"", X, Y + 60, 300, 600, hwnd);
     client_menu.push_back(chatText);
@@ -330,7 +364,6 @@ void visible(int menuNum) {
 
 
 int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousInstance, _In_ LPSTR cmdLine, _In_ INT cmdShow) {
-    
     // initializing Winsock
     WSADATA wsaData;
     
@@ -390,7 +423,7 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
         DispatchMessage(&msg);
     }
 
-    CloseWindow(start_hwnd);
+    ShowWindow(start_hwnd, SW_HIDE);
 
     switch (commSide) {
     case SERVER_MENU:
@@ -467,11 +500,13 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
             MessageBox(NULL, TEXT("Could not create window"), NULL, MB_ICONERROR);
             return 0;
         }
+
         WSAAsyncSelect(sTCP, client_hwnd, CLIENT_MSG_NOTIFICATION, (FD_ACCEPT | FD_WRITE | FD_READ | FD_CLOSE));
         ShowWindow(client_hwnd, cmdShow);
         UpdateWindow(client_hwnd);
 
         while (GetMessage(&msgClient, nullptr, 0, 0)) {
+            UpdateWindow(client_hwnd);
             TranslateMessage(&msgClient);
             DispatchMessage(&msgClient);
         }
@@ -479,10 +514,7 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
         CloseWindow(client_hwnd);
         break;
     }
-
-
     return 0;
-
 }
 
 LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, LPARAM lparam) {
@@ -536,16 +568,7 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
             WSAAsyncSelect(sTCP, hwnd, CLIENT_MSG_NOTIFICATION, FD_CONNECT | FD_READ | FD_CLOSE);
 
             error = connect(sTCP, (sockaddr*)&addr, sizeof(addr));
-
-            /*
-            if (error == SOCKET_ERROR) {
-                MessageBox(NULL, TEXT("failed to create a connection"), NULL, MB_ICONERROR);
-                closesocket(sTCP);
-                WSACleanup();
-                //return 1;
-            }
-            */
-            //commSide = CLIENT_MENU;
+            lasterror = WSAGetLastError();
             break;
  
         case CREATION:
@@ -563,7 +586,7 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
 
             bind(sTCP, (PSOCKADDR)&InternetAddr, sizeof(InternetAddr));
 
-            if (listen(sTCP, 5) == SOCKET_ERROR)
+            if (listen(sTCP, 1) == SOCKET_ERROR)
             {
                 printf("listen() failed with error %d\n", WSAGetLastError());
                 MessageBox(NULL, TEXT("listen() failed with error"), NULL, MB_ICONERROR);
@@ -630,12 +653,25 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
 
     case CLIENT_MSG_NOTIFICATION:         //Is a message being sent?
     {
+        wError = WSAGETSELECTERROR(lparam);
         switch (WSAGETSELECTEVENT(lparam))               //If so, which one is it?
         {
         case FD_CONNECT:
             //Connection was made successfully
-            MessageBox(NULL, TEXT("Client connected - The Client"), NULL, MB_OK);
-            commSide = CLIENT_MENU;
+
+            //lasterror = WSAGetLastError();
+
+            if (error == SOCKET_ERROR && wError) {
+                MessageBox(NULL, TEXT("failed to create a connection"), NULL, MB_ICONERROR);
+                closesocket(sTCP);
+                sTCP = INVALID_SOCKET;
+                //WSACleanup();
+                //return 1;
+            }
+            else{
+                MessageBox(NULL, TEXT("Client connected - The Client"), NULL, MB_OK);
+                commSide = CLIENT_MENU;
+            }
             break;
 
         case FD_READ:
@@ -687,6 +723,43 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         }
         break;
 
+    case WM_LBUTTONDOWN:
+        keysPressed.push_back(param);
+        break;
+
+    case WM_MBUTTONDOWN:
+        keysPressed.push_back(param);
+        break;
+
+    case WM_RBUTTONDOWN:
+        keysPressed.push_back(param);
+        break;
+    
+    case WM_KEYDOWN:
+        keysPressed.push_back(param);
+        break;
+
+    case WM_SYSKEYDOWN:
+        keysPressed.push_back(param);
+        break;
+
+    case WM_PAINT:
+        ps = { 0 };
+        //hDC = ::BeginPaint(hwnd, &ps);
+        hDC = GetDC(hwnd);
+        rc = { 0 };
+        ::GetClientRect(hwnd, &rc);
+        //screenshot = Screen::ResizeImage(Screen::GetScreenShot(),1920,1080);
+        Screen::DrawBitmap(hDC, 0, 0, rc.right, rc.bottom, Screen::GetScreenShot(), SRCCOPY);
+        //DeleteObject(screenshot);
+        ReleaseDC(hwnd, hDC);
+        //::EndPaint(hwnd, &ps);
+        //InvalidateRect(hwnd, NULL, TRUE);
+        break;
+
+    //case WM_NCHITTEST:
+    //    return HTCAPTION;
+    
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
