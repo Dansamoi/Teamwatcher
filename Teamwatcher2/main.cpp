@@ -150,6 +150,7 @@ void sendall(SOCKET s, const char* pdata, int buflen) {
     int sent = 0;
     while (buflen > 0) {
         sent = send(s, pdata, buflen, 0);
+        if (sent == -1) continue;
         pdata += sent;
         buflen -= sent;
     }
