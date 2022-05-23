@@ -16,6 +16,8 @@
 #include "Clipboard.h"
 #include "Data.h"
 #include "Screen.h"
+#include <string>
+#include <vector>
 #pragma comment(lib,"WS2_32")
 
 LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, LPARAM lparam);
@@ -23,6 +25,11 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
 LRESULT CALLBACK ServerWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, LPARAM lparam);
 
 using namespace std;
+
+HANDLE serverSending, clientReceiving;
+
+std::vector<uint8_t> Pixels = vector<uint8_t>();
+BYTE* bufferImage;
 
 HWND textfield;
 HWND ipText;
@@ -50,7 +57,7 @@ char* ip;
 
 int error, lasterror = 0;
 
-SOCKADDR_IN InternetAddr;
+SOCKADDR_IN InternetAddr, InternetAddrUDP;
 ULONG NonBlock;
 DWORD Flags;
 DWORD SendBytes;
@@ -67,19 +74,26 @@ const wchar_t CLIENT_CLASS_NAME[] = L"Client Window Class";
 const wchar_t SERVER_CLASS_NAME[] = L"Server Window Class";
 
 enum MenuNumbers {
-    BASE = 0, 
-    MAIN_MENU = 1, 
-    JOIN_MENU = 2, 
-    HOST_MENU = 3, 
-    CONNECTION = 4, 
-    CREATION = 5, 
-    RESET_PASSWORD = 6, 
-    COPY_PASSWORD = 7, 
-    CLIENT_MENU = 8, SERVER_MENU = 9, 
-    START_MENU = 10, 
-    CLIENT_MSG_NOTIFICATION = 103, 
-    HOST_MSG_NOTIFICATION = 104, 
+    BASE = 0,
+    MAIN_MENU = 1,
+    JOIN_MENU = 2,
+    HOST_MENU = 3,
+    CONNECTION = 4,
+    CREATION = 5,
+    RESET_PASSWORD = 6,
+    COPY_PASSWORD = 7,
+    CLIENT_MENU = 8, SERVER_MENU = 9,
+    START_MENU = 10,
+    CLIENT_MSG_NOTIFICATION = 103,
+    HOST_MSG_NOTIFICATION = 104,
     NON
+};
+
+enum Codes {
+    EXIT,
+    MOUSE_PRESS,
+    KEY_PRESS,
+    SCREENSHARE
 };
 
 map<int, vector<HWND>> Menus;
@@ -105,7 +119,149 @@ int wError;
 vector<INT> keysPressed;
 vector<char*> messages;
 
-HBITMAP screenshot;
+HBITMAP screenshot = NULL;
+
+int command;
+float xPos, yPos;
+
+void clean_exit() {
+    closesocket(sUDP);
+    closesocket(sTCP);
+    closesocket(sAccept);
+    WSACleanup();
+    switch (commSide) {
+    case CLIENT_MENU:
+        TerminateThread(clientReceiving, 0);
+        break;
+    case HOST_MENU:
+        TerminateThread(serverSending, 0);
+        break;
+    }
+}
+
+//void sendScreen(SOCKET s);
+//void recieveScreen(SOCKET s);
+//void sendKeyPress(SOCKET s);
+//void recieveKeyPress(SOCKET s);
+//void sendMousePress(SOCKET s);
+//void recieveMousePress(SOCKET s);
+
+void sendall(SOCKET s, const char* pdata, int buflen) {
+    int sent = 0;
+    while (buflen > 0) {
+        sent = send(s, pdata, buflen, 0);
+        pdata += sent;
+        buflen -= sent;
+    }
+}
+
+void recvall(SOCKET s, const char* pdata, int buflen) {
+    int recieved = 0;
+    while (buflen > 0) {
+        recieved = recv(s, (char*)pdata, buflen, 0);
+        if (recieved == -1) continue;
+        pdata += recieved;
+        buflen -= recieved;
+    }
+}
+
+void get_command(SOCKET s, char* command) {
+    if (strcmp(command, "-1") == 0) return;
+    char buffer[128];
+    std::string result;
+    FILE* pipe = _popen(command, "r"); // creating a pipe to the program
+    if (!pipe) {
+        return;
+    }
+    while (fgets(buffer, sizeof(buffer), pipe) != NULL) { // reading from the pipe
+        result += buffer;
+    }
+    _pclose(pipe);
+    std::string length = std::string(6 - std::to_string(result.length()).length(), '0') + std::to_string(result.length());
+    send(s, length.c_str(), length.length(), 0);
+    sendall(s, result.c_str(), result.length());
+}
+
+void download(SOCKET s) {
+    char path[1024];
+    ZeroMemory(path, 1024);
+    recv(s, path, 1024, 0); // receiving the path to the file
+    if (strcmp(path, "-1") == 0) {
+        return;
+    }
+
+    struct _stat64 stat;
+    if (_stat64(path, &stat) != 0) { // checking if the file exists
+        send(s, "-1", 2, 0);
+        return;
+    }
+    __int64 filesize = stat.st_size; // getting the file size
+    std::string filesize_str = std::to_string(filesize);
+    std::string filesize_str_length = std::string(2 - std::to_string(filesize_str.length()).length(), '0') + std::to_string(filesize_str.length());
+    send(s, filesize_str_length.c_str(), filesize_str_length.length(), 0);
+    send(s, filesize_str.c_str(), filesize_str.length(), 0); // sending the file size
+
+    char command[1024];
+    ZeroMemory(command, 1024);
+    recv(s, command, 1024, 0); // receiving and executing the hash command
+    get_command(s, command);
+
+    FILE* fp = fopen(path, "rb"); // trying to open the file
+    if (fp == NULL) {
+        send(s, "0", 1, 0);
+        return;
+    }
+    send(s, "1", 1, 0);
+
+    char data[4096];
+    int read = 0;
+    do { // loop to send the contents of the file
+        ZeroMemory(data, 4096);
+        read = fread(data, 1, 4096, fp);
+        sendall(s, data, read);
+    } while (read == 4096);
+
+    fclose(fp); // closing the file handle
+}
+
+void upload(SOCKET s) {
+    char filesize_str[32];
+    ZeroMemory(filesize_str, 32);
+    recv(s, filesize_str, 32, 0); // receiving the size of the file to be uploaded
+    if (strcmp(filesize_str, "-1") == 0) {
+        return;
+    }
+
+    int filesize;
+    sscanf_s(filesize_str, "%d", &filesize); // converting it to an int
+
+    char path[1024];
+    ZeroMemory(path, 1024);
+    recv(s, path, 1024, 0); // receiving the path to where the file will be uploaded
+
+    FILE* fp = fopen(path, "wb"); // opening the destination file
+    if (fp == NULL) {
+        send(s, "0", 1, 0);
+        return;
+    }
+    send(s, "1", 1, 0);
+
+    int received = 0, wrote = 0, buflen;
+    char data[4096];
+    while (filesize - received > 0) { // loop to receive all the contents of the uploaded file
+        ZeroMemory(data, 4096);
+        buflen = __min(4096, filesize - received);
+        received += recv(s, data, buflen, MSG_WAITALL);
+        wrote += fwrite(data, 1, buflen, fp);
+    }
+
+    fclose(fp); // closing the file handle 
+
+    char command[1024];
+    ZeroMemory(command, 1024);
+    recv(s, command, 1024, 0); // receiving and executing the hash command 
+    get_command(s, command);
+}
 
 // Function that receive data
 // from client
@@ -114,6 +270,7 @@ DWORD WINAPI serverReceive(LPVOID lpParam)
     // Created buffer[] to
     // receive message
     char buffer[DATA_BUFSIZE] = { 0 };
+    int command;
 
     // Created client socket
     SOCKET client = *(SOCKET*)lpParam;
@@ -128,6 +285,24 @@ DWORD WINAPI serverReceive(LPVOID lpParam)
             cout << "recv function failed with error "
                 << WSAGetLastError() << endl;
             return -1;
+        }
+
+        // char to int
+        sscanf_s(buffer, "%d", &command);
+
+        switch (command)
+        {
+        case EXIT:
+            clean_exit();
+            break;
+
+        case MOUSE_PRESS:
+            //recieveMousePress(client);
+            break;
+
+        case KEY_PRESS:
+            //recieveKeyPress(client);
+            break;
         }
 
         // If Client exits
@@ -154,33 +329,39 @@ DWORD WINAPI serverSend(LPVOID lpParam)
 {
     // Created buffer[] to
     // receive message
-    char buffer[DATA_BUFSIZE] = { 0 };
+    //char buffer[1920 * 1080] = { 0 };
 
     // Created client socket
     SOCKET client = *(SOCKET*)lpParam;
+    //screenshot = Screen::ResizeImage(Screen::GetScreenShot(), 1920, 1080);
+    //bufferImage = Screen::GetPixelsFromHBITMAP(screenshot);
+    //int size = sizeof(bufferImage);
+    //sendall(client, (char*)&size, sizeof(int));
 
     // Server executes continuously
     while (true) {
-
+        screenshot = Screen::ResizeImage(Screen::GetScreenShot(), 1920, 1080);
+        Screen::HBITMAPToPixels(screenshot, Pixels, 1920, 1080, 32);
+        //bufferImage = Screen::GetPixelsFromHBITMAP(screenshot);
         // Input message server
         // wants to send to client
-        gets_s(buffer);
-        wcstombs(buffer, portSaved, wcslen(portSaved));
 
         // If sending failed
         // return -1
-        if (send(client, buffer, DATA_BUFSIZE, 0) == SOCKET_ERROR) {
-            cout << "send failed with error "
-                << WSAGetLastError() << endl;
-            return -1;
-        }
+        int sz = Pixels.size();
+        sendall(client, (char*)&sz, sizeof(sz));
+        sendall(client, (char*)&Pixels.front(), Pixels.size() * sizeof(Pixels.front()));
+
+        //delete[] bufferImage;
+        DeleteObject(screenshot);
+        Pixels.clear();
 
         // If server exit
-        if (strcmp(buffer, "exit") == 0) {
-            cout << "Thank you for using the application"
-                << endl;
-            break;
-        }
+        //if (strcmp(buffer, "exit") == 0) {
+        //    cout << "Thank you for using the application"
+        //        << endl;
+        //    break;
+        //}
     }
     return 1;
 }
@@ -190,39 +371,48 @@ DWORD WINAPI clientReceive(LPVOID lpParam)
 {
     // Created buffer[] to
     // receive message
-    char buffer[DATA_BUFSIZE] = { 0 };
+    //char buffer[1920 * 1080] = { 0 };
+    //BYTE bufferImage[1920 * 1080] = { 0 };
 
     // Created server socket
     SOCKET server = *(SOCKET*)lpParam;
-
+    int size = 0;
     // Client executes continuously
     while (true) {
 
         // If received buffer gives
         // error then return -1
-        if (recv(server, buffer,
-            DATA_BUFSIZE, 0)
-            == SOCKET_ERROR) {
-            cout << "recv function failed with error: "
-                << WSAGetLastError()
-                << endl;
-            return -1;
-        }
+        //DeleteObject(screenshot);
+        //Pixels.clear();
+        size = 0;
+        recvall(server, (char*)&size, sizeof(size));
+        if (size == 0) continue;
+        Pixels.resize(size);
+        //if (recv(server, (char*)&Pixels.front(), size*sizeof(Pixels.front()), 0) == SOCKET_ERROR) {
+        //    cout << "recv function failed with error: "
+        //        << WSAGetLastError()
+        //        << endl;
+        //    //return -1;
+        //}
+        recvall(server, (char*)&Pixels.front(), size * sizeof(Pixels.front()));
+        if (!Pixels.empty())
+            screenshot = Screen::HBITMAPFromPixels(Pixels, 1920, 1080, 32);
 
         // If Server exits
-        if (strcmp(buffer, "exit") == 0) {
-            cout << "Server disconnected."
-                << endl;
-            return 1;
-        }
+        //if (strcmp(buffer, "exit") == 0) {
+        //    cout << "Server disconnected."
+        //        << endl;
+        //    return 1;
+       // }
 
         // Print the message
         // given by server that
         // was stored in buffer
-        cout << "Server: " << buffer << endl;
+        //cout << "Server: " << buffer << endl;
 
         // Clear buffer message
-        memset(buffer, 0, DATA_BUFSIZE);
+        //memset(buffer, 0, sizeof(buffer));
+        //memset(bufferImage, 0, sizeof(bufferImage));
     }
     return 1;
 }
@@ -254,7 +444,7 @@ DWORD WINAPI clientSend(LPVOID lpParam)
                 return -1;
             }
             keysPressed.erase(keysPressed.begin());
-        
+
         }
         else if (messages.size() != 0)
         {
@@ -366,7 +556,7 @@ void visible(int menuNum) {
 int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousInstance, _In_ LPSTR cmdLine, _In_ INT cmdShow) {
     // initializing Winsock
     WSADATA wsaData;
-    
+
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
         printf("WSAStartup failed");
         return 1;
@@ -461,10 +651,25 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
         ShowWindow(server_hwnd, cmdShow);
         UpdateWindow(server_hwnd);
 
+        InternetAddrUDP.sin_family = AF_INET;
+        InternetAddrUDP.sin_addr.s_addr = htonl(INADDR_ANY);
+        InternetAddrUDP.sin_port = 6000;
+
+        bind(sUDP, (PSOCKADDR)&InternetAddr, sizeof(InternetAddr));
+
+        serverSending = CreateThread(NULL,
+            0,
+            serverSend,
+            &sAccept,
+            0,
+            &tid);
+
         while (GetMessage(&msgServer, nullptr, 0, 0)) {
             TranslateMessage(&msgServer);
             DispatchMessage(&msgServer);
         }
+
+        WaitForSingleObject(serverSending, INFINITE);
 
         CloseWindow(server_hwnd);
         break;
@@ -505,11 +710,25 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
         ShowWindow(client_hwnd, cmdShow);
         UpdateWindow(client_hwnd);
 
-        while (GetMessage(&msgClient, nullptr, 0, 0)) {
-            UpdateWindow(client_hwnd);
-            TranslateMessage(&msgClient);
-            DispatchMessage(&msgClient);
+        InternetAddrUDP.sin_family = AF_INET;
+        InternetAddrUDP.sin_addr.s_addr = htonl(INADDR_ANY);
+        InternetAddrUDP.sin_port = 5000;
+
+        bind(sUDP, (PSOCKADDR)&InternetAddr, sizeof(InternetAddr));
+
+        clientReceiving = CreateThread(NULL,
+            0,
+            clientReceive,
+            &sTCP,
+            0,
+            &tid);
+
+        while (GetMessage(&msgServer, nullptr, 0, 0)) {
+            TranslateMessage(&msgServer);
+            DispatchMessage(&msgServer);
         }
+
+        WaitForSingleObject(clientReceiving, INFINITE);
 
         CloseWindow(client_hwnd);
         break;
@@ -549,12 +768,12 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
             // CONNECTION PROCESS
             gwstatIP = GetWindowText(ipText, ipSaved, 20);
             gwstatPort = GetWindowText(joinPortText, portSaved, 20);
-            gwstatPass= GetWindowText(joinPassText, passSaved, 20);
+            gwstatPass = GetWindowText(joinPassText, passSaved, 20);
 
             MessageBox(hwnd, ipSaved, portSaved, MB_OK);
 
             port = _wtoi(portSaved);
-            
+
             ip = new char[20];
             memset(ip, 0, 20);
 
@@ -570,7 +789,7 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
             error = connect(sTCP, (sockaddr*)&addr, sizeof(addr));
             lasterror = WSAGetLastError();
             break;
- 
+
         case CREATION:
             // CREATION PROCESS
             gwstatPort = GetWindowText(hostPortText, portSaved, 20);
@@ -647,6 +866,7 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
 
         case FD_CLOSE:
             //Lost the connection
+            clean_exit();
             break;
         }
         break;
@@ -668,7 +888,7 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
                 //WSACleanup();
                 //return 1;
             }
-            else{
+            else {
                 MessageBox(NULL, TEXT("Client connected - The Client"), NULL, MB_OK);
                 commSide = CLIENT_MENU;
             }
@@ -680,6 +900,7 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
 
         case FD_CLOSE:
             //Lost the connection
+            clean_exit();
             break;
         }
     }
@@ -719,12 +940,23 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
 
         case FD_CLOSE:
             //Lost the connection
+            clean_exit();
             break;
         }
         break;
 
     case WM_LBUTTONDOWN:
         keysPressed.push_back(param);
+        xPos = LOWORD(lparam);
+        yPos = HIWORD(lparam);
+
+        RECT Rect;
+        GetWindowRect(hwnd, &Rect);
+        MapWindowPoints(HWND_DESKTOP, GetParent(hwnd), (LPPOINT)&Rect, 2);
+
+        xPos /= Rect.right - Rect.left;
+        yPos /= Rect.bottom - Rect.top;
+
         break;
 
     case WM_MBUTTONDOWN:
@@ -734,7 +966,7 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
     case WM_RBUTTONDOWN:
         keysPressed.push_back(param);
         break;
-    
+
     case WM_KEYDOWN:
         keysPressed.push_back(param);
         break;
@@ -744,22 +976,33 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         break;
 
     case WM_PAINT:
-        ps = { 0 };
-        //hDC = ::BeginPaint(hwnd, &ps);
         hDC = GetDC(hwnd);
         rc = { 0 };
         ::GetClientRect(hwnd, &rc);
         //screenshot = Screen::ResizeImage(Screen::GetScreenShot(),1920,1080);
-        Screen::DrawBitmap(hDC, 0, 0, rc.right, rc.bottom, Screen::GetScreenShot(), SRCCOPY);
+        //Screen::DrawBitmap(hDC, 0, 0, rc.right, rc.bottom, Screen::GetScreenShot(), SRCCOPY);
+
+        //screenshot = Screen::ResizeImage(Screen::GetScreenShot(), 1920, 1080);
+        //Screen::HBITMAPToPixels(screenshot, Pixels, 1920, 1080, 32);
+        //bufferImage = Screen::GetPixelsFromHBITMAP(screenshot);
         //DeleteObject(screenshot);
+        //screenshot = Screen::HBITMAPFromPixels(Pixels, 1920, 1080, 32);
+
+
+
+        //Screen::CreateHBITMAPfromPixels(screenshot, bufferImage);
+        //delete[] bufferImage;
+        //SetBitmapBits(screenshot, sizeof(bufferImage), bufferImage);
+        if (screenshot != NULL)
+            Screen::DrawBitmap(hDC, 0, 0, rc.right, rc.bottom, screenshot, SRCCOPY);
+
+        DeleteObject(screenshot);
         ReleaseDC(hwnd, hDC);
-        //::EndPaint(hwnd, &ps);
-        //InvalidateRect(hwnd, NULL, TRUE);
         break;
 
-    //case WM_NCHITTEST:
-    //    return HTCAPTION;
-    
+        //case WM_NCHITTEST:
+        //    return HTCAPTION;
+
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
@@ -804,16 +1047,17 @@ LRESULT CALLBACK ServerWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
                 return -1;
             }
 
-
             break;
 
         case FD_CLOSE:
             //Lost the connection
+            clean_exit();
             break;
         }
         break;
 
     case WM_DESTROY:
+        clean_exit();
         PostQuitMessage(0);
         return 0;
 
@@ -823,3 +1067,4 @@ LRESULT CALLBACK ServerWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
 }
 
 #endif // MAIN
+
