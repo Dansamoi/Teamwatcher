@@ -341,8 +341,8 @@ DWORD WINAPI serverSend(LPVOID lpParam)
 
     // Server executes continuously
     while (true) {
-        screenshot = Screen::ResizeImage(Screen::GetScreenShot(), 1920, 1080);
-        Screen::HBITMAPToPixels(screenshot, Pixels, 1920, 1080, 32);
+        screenshot = Screen::ResizeImage(Screen::GetScreenShot(), 1280, 720);
+        Screen::HBITMAPToPixels(screenshot, Pixels, 1280, 720, 32);
         //bufferImage = Screen::GetPixelsFromHBITMAP(screenshot);
         // Input message server
         // wants to send to client
@@ -397,7 +397,7 @@ DWORD WINAPI clientReceive(LPVOID lpParam)
         //}
         recvall(server, (char*)&Pixels.front(), size * sizeof(Pixels.front()));
         if (!Pixels.empty())
-            screenshot = Screen::HBITMAPFromPixels(Pixels, 1920, 1080, 32);
+            screenshot = Screen::HBITMAPFromPixels(Pixels, 1280, 720, 32);
 
         // If Server exits
         //if (strcmp(buffer, "exit") == 0) {
