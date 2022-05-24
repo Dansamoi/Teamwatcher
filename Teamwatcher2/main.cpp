@@ -28,6 +28,10 @@ using namespace std;
 
 HANDLE serverSending, clientReceiving;
 
+int threadExitFlag = 1;
+
+RECT Rect;
+
 std::vector<uint8_t> Pixels = vector<uint8_t>();
 BYTE* bufferImage;
 
@@ -150,7 +154,17 @@ void sendall(SOCKET s, const char* pdata, int buflen) {
     int sent = 0;
     while (buflen > 0) {
         sent = send(s, pdata, buflen, 0);
-        if (sent == -1) continue;
+        if (sent == -1) break;
+        pdata += sent;
+        buflen -= sent;
+    }
+}
+
+void sendallUDP(SOCKET s, const char* pdata, int buflen, sockaddr to) {
+    int sent = 0;
+    while (buflen > 0) {
+        sent = sendto(s, pdata, buflen, 0, &to, sizeof(to));
+        if (sent == -1) break;
         pdata += sent;
         buflen -= sent;
     }
@@ -160,7 +174,18 @@ void recvall(SOCKET s, const char* pdata, int buflen) {
     int recieved = 0;
     while (buflen > 0) {
         recieved = recv(s, (char*)pdata, buflen, 0);
-        if (recieved == -1) continue;
+        if (recieved == -1) break;
+        pdata += recieved;
+        buflen -= recieved;
+    }
+}
+
+void recvallUDP(SOCKET s, const char* pdata, int buflen, sockaddr from) {
+    int sizeOfFrom = sizeof(from);
+    int recieved = 0;
+    while (buflen > 0) {
+        recieved = recvfrom(s, (char*)pdata, buflen, 0, &from, &sizeOfFrom);
+        if (recieved == -1) break;
         pdata += recieved;
         buflen -= recieved;
     }
@@ -397,6 +422,7 @@ DWORD WINAPI clientReceive(LPVOID lpParam)
         //}
         recvall(server, (char*)&Pixels.front(), size * sizeof(Pixels.front()));
         if (!Pixels.empty())
+            //DeleteObject(screenshot);
             screenshot = Screen::HBITMAPFromPixels(Pixels, 1280, 720, 32);
 
         // If Server exits
@@ -648,7 +674,7 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
             MessageBox(NULL, TEXT("Could not create window"), NULL, MB_ICONERROR);
             return 0;
         }
-        WSAAsyncSelect(sAccept, server_hwnd, HOST_MSG_NOTIFICATION, (FD_ACCEPT | FD_WRITE | FD_CONNECT | FD_READ | FD_CLOSE));
+        //WSAAsyncSelect(sAccept, server_hwnd, HOST_MSG_NOTIFICATION, (FD_ACCEPT | FD_WRITE | FD_CONNECT | FD_READ | FD_CLOSE));
         ShowWindow(server_hwnd, cmdShow);
         UpdateWindow(server_hwnd);
 
@@ -707,7 +733,7 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
             return 0;
         }
 
-        WSAAsyncSelect(sTCP, client_hwnd, CLIENT_MSG_NOTIFICATION, (FD_ACCEPT | FD_WRITE | FD_READ | FD_CLOSE));
+        //WSAAsyncSelect(sTCP, client_hwnd, CLIENT_MSG_NOTIFICATION, (FD_ACCEPT | FD_WRITE | FD_READ | FD_CLOSE));
         ShowWindow(client_hwnd, cmdShow);
         UpdateWindow(client_hwnd);
 
@@ -775,6 +801,11 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
 
             port = _wtoi(portSaved);
 
+            if (port <= 0 || port > 65535) {
+                MessageBox(NULL, TEXT("This is not a port!\nPorts are between 0-65535"), NULL, MB_OK);
+                break;
+            }
+
             ip = new char[20];
             memset(ip, 0, 20);
 
@@ -783,12 +814,19 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
             struct sockaddr_in addr;
             addr.sin_family = AF_INET;
             addr.sin_port = htons(port);
-            inet_pton(AF_INET, ip, &addr.sin_addr);
+            if (0 == inet_pton(AF_INET, ip, &addr.sin_addr)) {
+                MessageBox(NULL, TEXT("This is not a IPv4 address!\nIP's are in the following format:\nIPv4:(1-3 numbers).(1-3 numbers).(1-3 numbers).(1-3 numbers)"), NULL, MB_OK);
+                break;
+            }
 
-            WSAAsyncSelect(sTCP, hwnd, CLIENT_MSG_NOTIFICATION, FD_CONNECT | FD_READ | FD_CLOSE);
+            //WSAAsyncSelect(sTCP, hwnd, CLIENT_MSG_NOTIFICATION, FD_CONNECT | FD_READ | FD_CLOSE);
 
             error = connect(sTCP, (sockaddr*)&addr, sizeof(addr));
             lasterror = WSAGetLastError();
+            if (error != SOCKET_ERROR)
+                commSide = CLIENT_MENU;
+            else
+                MessageBox(NULL, TEXT("connection failed with error"), NULL, MB_ICONERROR);
             break;
 
         case CREATION:
@@ -804,21 +842,26 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
             InternetAddr.sin_addr.s_addr = htonl(INADDR_ANY);
             InternetAddr.sin_port = htons(port);
 
+            if (port <= 0 || port > 65535) {
+                MessageBox(NULL, TEXT("This is not a port!\nPorts are between 0-65535"), NULL, MB_OK);
+                break;
+            }
+
             bind(sTCP, (PSOCKADDR)&InternetAddr, sizeof(InternetAddr));
 
             if (listen(sTCP, 1) == SOCKET_ERROR)
             {
                 printf("listen() failed with error %d\n", WSAGetLastError());
                 MessageBox(NULL, TEXT("listen() failed with error"), NULL, MB_ICONERROR);
-                //return 1;
+                break;
             }
             else
             {
                 MessageBox(NULL, TEXT("listen() is OK!"), NULL, MB_OK);
             }
-
-            WSAAsyncSelect(sTCP, hwnd, HOST_MSG_NOTIFICATION, FD_ACCEPT | FD_CONNECT | FD_READ | FD_CLOSE);
-
+            sAccept = accept(sTCP, NULL, NULL);
+            //WSAAsyncSelect(sTCP, hwnd, HOST_MSG_NOTIFICATION, FD_ACCEPT | FD_CONNECT | FD_READ | FD_CLOSE);
+            commSide = SERVER_MENU;
             break;
 
         case RESET_PASSWORD:
@@ -942,6 +985,8 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         case FD_CLOSE:
             //Lost the connection
             clean_exit();
+            PostQuitMessage(0);
+            return 0;
             break;
         }
         break;
@@ -951,29 +996,117 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         xPos = LOWORD(lparam);
         yPos = HIWORD(lparam);
 
-        RECT Rect;
         GetWindowRect(hwnd, &Rect);
         MapWindowPoints(HWND_DESKTOP, GetParent(hwnd), (LPPOINT)&Rect, 2);
 
         xPos /= Rect.right - Rect.left;
         yPos /= Rect.bottom - Rect.top;
+        keysPressed.push_back(xPos);
+        keysPressed.push_back(yPos);
 
+        keysPressed.push_back(MOUSEEVENTF_LEFTDOWN);
+        break;
+
+    case WM_LBUTTONUP:
+        keysPressed.push_back(param);
+        xPos = LOWORD(lparam);
+        yPos = HIWORD(lparam);
+
+        GetWindowRect(hwnd, &Rect);
+        MapWindowPoints(HWND_DESKTOP, GetParent(hwnd), (LPPOINT)&Rect, 2);
+
+        xPos /= Rect.right - Rect.left;
+        yPos /= Rect.bottom - Rect.top;
+        keysPressed.push_back(xPos);
+        keysPressed.push_back(yPos);
+
+        keysPressed.push_back(MOUSEEVENTF_LEFTUP);
         break;
 
     case WM_MBUTTONDOWN:
         keysPressed.push_back(param);
+        xPos = LOWORD(lparam);
+        yPos = HIWORD(lparam);
+
+        GetWindowRect(hwnd, &Rect);
+        MapWindowPoints(HWND_DESKTOP, GetParent(hwnd), (LPPOINT)&Rect, 2);
+
+        xPos /= Rect.right - Rect.left;
+        yPos /= Rect.bottom - Rect.top;
+        keysPressed.push_back(xPos);
+        keysPressed.push_back(yPos);
+
+        keysPressed.push_back(MOUSEEVENTF_MIDDLEDOWN);
+        break;
+
+    case WM_MBUTTONUP:
+        keysPressed.push_back(param);
+        xPos = LOWORD(lparam);
+        yPos = HIWORD(lparam);
+
+        GetWindowRect(hwnd, &Rect);
+        MapWindowPoints(HWND_DESKTOP, GetParent(hwnd), (LPPOINT)&Rect, 2);
+
+        xPos /= Rect.right - Rect.left;
+        yPos /= Rect.bottom - Rect.top;
+        keysPressed.push_back(xPos);
+        keysPressed.push_back(yPos);
+
+        keysPressed.push_back(MOUSEEVENTF_MIDDLEUP);
         break;
 
     case WM_RBUTTONDOWN:
         keysPressed.push_back(param);
+        xPos = LOWORD(lparam);
+        yPos = HIWORD(lparam);
+
+        GetWindowRect(hwnd, &Rect);
+        MapWindowPoints(HWND_DESKTOP, GetParent(hwnd), (LPPOINT)&Rect, 2);
+
+        xPos /= Rect.right - Rect.left;
+        yPos /= Rect.bottom - Rect.top;
+        keysPressed.push_back(xPos);
+        keysPressed.push_back(yPos);
+
+        keysPressed.push_back(MOUSEEVENTF_RIGHTDOWN);
+        break;
+
+    case WM_RBUTTONUP:
+        keysPressed.push_back(param);
+        xPos = LOWORD(lparam);
+        yPos = HIWORD(lparam);
+
+        Rect;
+
+        GetWindowRect(hwnd, &Rect);
+        MapWindowPoints(HWND_DESKTOP, GetParent(hwnd), (LPPOINT)&Rect, 2);
+
+        xPos /= Rect.right - Rect.left;
+        yPos /= Rect.bottom - Rect.top;
+        keysPressed.push_back(xPos);
+        keysPressed.push_back(yPos);
+
+        keysPressed.push_back(MOUSEEVENTF_RIGHTUP);
         break;
 
     case WM_KEYDOWN:
         keysPressed.push_back(param);
+        keysPressed.push_back(0);
+        break;
+
+    case WM_KEYUP:
+        keysPressed.push_back(param);
+        keysPressed.push_back(KEYEVENTF_KEYUP);
         break;
 
     case WM_SYSKEYDOWN:
         keysPressed.push_back(param);
+        keysPressed.push_back(0);
+        break;
+
+    case WM_SYSKEYUP:
+        keysPressed.push_back(param);
+        keysPressed.push_back(KEYEVENTF_KEYUP);
         break;
 
     case WM_PAINT:
@@ -996,8 +1129,7 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         //SetBitmapBits(screenshot, sizeof(bufferImage), bufferImage);
         if (screenshot != NULL)
             Screen::DrawBitmap(hDC, 0, 0, rc.right, rc.bottom, screenshot, SRCCOPY);
-
-        DeleteObject(screenshot);
+        //DeleteObject(screenshot);
         ReleaseDC(hwnd, hDC);
         break;
 
@@ -1005,6 +1137,7 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         //    return HTCAPTION;
 
     case WM_DESTROY:
+        clean_exit();
         PostQuitMessage(0);
         return 0;
 
@@ -1038,21 +1171,23 @@ LRESULT CALLBACK ServerWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
 
         case FD_READ:
             //Incoming data; get ready to receive
-            buffer[DATA_BUFSIZE] = { 0 };
+            //buffer[DATA_BUFSIZE] = { 0 };
 
             // Created client socket
-            if (recv(sAccept, buffer, DATA_BUFSIZE, 0)
-                == SOCKET_ERROR) {
-                cout << "recv function failed with error "
-                    << WSAGetLastError() << endl;
-                return -1;
-            }
+            //if (recv(sAccept, buffer, DATA_BUFSIZE, 0)
+            //    == SOCKET_ERROR) {
+            //    cout << "recv function failed with error "
+            //        << WSAGetLastError() << endl;
+            //    return -1;
+            //}
 
             break;
 
         case FD_CLOSE:
             //Lost the connection
             clean_exit();
+            PostQuitMessage(0);
+            return 0;
             break;
         }
         break;

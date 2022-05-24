@@ -81,7 +81,7 @@ public:
         bResult = StretchBlt(hDC, x, y, width, height,
             hDCBits, 0, 0, Bitmap.bmWidth, Bitmap.bmHeight, dwROP);
         DeleteDC(hDCBits);
-        ::DeleteObject(hBitmap);
+        //::DeleteObject(hBitmap);
 
         return bResult;
     }

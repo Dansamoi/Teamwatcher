@@ -143,6 +143,7 @@
     <ClInclude Include="CreateUI.h" />
     <ClInclude Include="Data.h" />
     <ClInclude Include="framework.h" />
+    <ClInclude Include="InputSimulator.h" />
     <ClInclude Include="Password.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="Screen.h" />
@@ -152,6 +153,7 @@
   <ItemGroup>
     <ClCompile Include="Clipboard.cpp" />
     <ClCompile Include="CreateUI.cpp" />
+    <ClCompile Include="InputSimulator.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Password.cpp" />
     <ClCompile Include="Screen.cpp" />
