@@ -18,6 +18,7 @@
 #include "Screen.h"
 #include <string>
 #include <vector>
+#include "InputSimulator.h"
 #pragma comment(lib,"WS2_32")
 
 LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, LPARAM lparam);
@@ -26,7 +27,7 @@ LRESULT CALLBACK ServerWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
 
 using namespace std;
 
-HANDLE serverSending, clientReceiving;
+HANDLE serverSending, clientReceiving, serverReceiving, clientSending;
 
 int threadExitFlag = 1;
 
@@ -97,8 +98,7 @@ enum MenuNumbers {
 enum Codes {
     EXIT,
     MOUSE_PRESS,
-    KEY_PRESS,
-    SCREENSHARE
+    KEY_PRESS
 };
 
 map<int, vector<HWND>> Menus;
@@ -144,13 +144,6 @@ void clean_exit() {
     }
 }
 
-//void sendScreen(SOCKET s);
-//void recieveScreen(SOCKET s);
-//void sendKeyPress(SOCKET s);
-//void recieveKeyPress(SOCKET s);
-//void sendMousePress(SOCKET s);
-//void recieveMousePress(SOCKET s);
-
 void sendall(SOCKET s, const char* pdata, int buflen) {
     int sent = 0;
     while (buflen > 0) {
@@ -193,10 +186,34 @@ void recvallUDP(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN from) {
     int sizeOfFrom = sizeof(from);
     int recieved = 0;
     int recvLen = DATA_BUFSIZE * 10;
+    int packAmount = 1280 * 720 * 4 / (DATA_BUFSIZE * 10);
     int error;
+    if (buflen < recvLen) {
+        while (buflen > 0) {
+            recieved = recvfrom(s, (char*)pdata, recvLen, 0, (sockaddr*)&from, &sizeOfFrom);
+            if (recieved == -1) {
+                error = WSAGetLastError();
+                continue;
+            }
+            pdata += recieved;
+            buflen -= recieved;
+        }
+    }
+    else 
+    {
+        for (int i = 0; i < packAmount; i++) {
+            recieved = recvfrom(s, (char*)pdata, recvLen, 0, (sockaddr*)&from, &sizeOfFrom);
+            if (recieved == -1) {
+                error = WSAGetLastError();
+                continue;
+            }
+            pdata += DATA_BUFSIZE*10;
+            buflen -= DATA_BUFSIZE * 10;
+        }
+    
+    }
+        recvLen = buflen;
     while (buflen > 0) {
-        if (buflen < recvLen)
-            recvLen = buflen;
         recieved = recvfrom(s, (char*)pdata, recvLen, 0, (sockaddr*)&from, &sizeOfFrom);
         if (recieved == -1) {
             error = WSAGetLastError();
@@ -305,13 +322,44 @@ void upload(SOCKET s) {
     get_command(s, command);
 }
 
+
+//void sendScreen(SOCKET s);
+//void recieveScreen(SOCKET s);
+//void sendKeyPress(SOCKET s);
+void recieveKeyPress(SOCKET s) {
+    int code = 0;
+    int up_down = 0;
+
+    recvall(s, (char*)&code, sizeof(int));
+    recvall(s, (char*)&up_down, sizeof(int));
+
+    InputSimulator::SimulateKeyInput(code, up_down);
+
+}
+
+//void sendMousePress(SOCKET s);
+void recieveMousePress(SOCKET s) {
+    int xPos = 0;
+    int yPos = 0;
+    int code_up_down = 0;
+
+
+    recvall(s, (char*)&xPos, sizeof(int));
+    recvall(s, (char*)&yPos, sizeof(int));
+    recvall(s, (char*)&code_up_down, sizeof(int));
+
+    InputSimulator::SimulateMouseInput(code_up_down, xPos * GetSystemMetrics(SM_CXSCREEN), yPos * GetSystemMetrics(SM_CYSCREEN));
+
+
+}
+
 // Function that receive data
 // from client
 DWORD WINAPI serverReceive(LPVOID lpParam)
 {
     // Created buffer[] to
     // receive message
-    char buffer[DATA_BUFSIZE] = { 0 };
+    char buffer[sizeof(int)] = { 0 };
     int command;
 
     // Created client socket
@@ -323,7 +371,7 @@ DWORD WINAPI serverReceive(LPVOID lpParam)
 
         // If received buffer gives
         // error then return -1
-        if (recv(client, buffer, DATA_BUFSIZE, 0)
+        if (recv(client, buffer, sizeof(int), 0)
             == SOCKET_ERROR) {
             cout << "recv function failed with error "
                 << WSAGetLastError() << endl;
@@ -340,11 +388,11 @@ DWORD WINAPI serverReceive(LPVOID lpParam)
             break;
 
         case MOUSE_PRESS:
-            //recieveMousePress(client);
+            recieveMousePress(client);
             break;
 
         case KEY_PRESS:
-            //recieveKeyPress(client);
+            recieveKeyPress(client);
             break;
         }
 
@@ -423,16 +471,21 @@ DWORD WINAPI serverSendUDP(LPVOID lpParam)
     //sendall(client, (char*)&size, sizeof(int));
 
     // Server executes continuously
+    double delay = 1 / 30 * CLOCKS_PER_SEC;
     clock_t last_cycle = clock();
-    screenshot = Screen::ResizeImage(Screen::GetScreenShot(), 1280, 720);
+    screenshot = Screen::GetScreenShot();
+    double now = (clock() - last_cycle) / (double)CLOCKS_PER_SEC;;
+    last_cycle = clock();
+    screenshot = Screen::ResizeImage(screenshot, 1280, 720);
+    now = (clock() - last_cycle) / (double)CLOCKS_PER_SEC;;
     Screen::HBITMAPToPixels(screenshot, Pixels, 1280, 720, 32);
     int sz = Pixels.size();
     sendallUDP(client, (char*)&sz, sizeof(sz), to);
+    DeleteObject(screenshot);
     while (true) {
-        screenshot = Screen::GetScreenShot();
-        clock_t next_cycle = clock();
-        double duration = (next_cycle - last_cycle) / (double)CLOCKS_PER_SEC;
-        last_cycle = next_cycle;
+        //clock_t next_cycle = clock();
+        //double duration = (next_cycle - last_cycle) / (double)CLOCKS_PER_SEC;
+        //last_cycle = next_cycle;
         screenshot = Screen::ResizeImage(Screen::GetScreenShot(), 1280, 720);
         Screen::HBITMAPToPixels(screenshot, Pixels, 1280, 720, 32);
         //bufferImage = Screen::GetPixelsFromHBITMAP(screenshot);
@@ -448,6 +501,8 @@ DWORD WINAPI serverSendUDP(LPVOID lpParam)
         //delete[] bufferImage;
         DeleteObject(screenshot);
         Pixels.clear();
+        while (clock() - last_cycle < delay);
+        last_cycle = clock();
 
         //waitKey(FRAME_INTERVAL);
 
@@ -493,6 +548,7 @@ DWORD WINAPI clientReceive(LPVOID lpParam)
         if (!Pixels.empty())
             DeleteObject(screenshot);
             screenshot = Screen::HBITMAPFromPixels(Pixels, 1280, 720, 32);
+            Pixels.clear();
 
         // If Server exits
         //if (strcmp(buffer, "exit") == 0) {
@@ -581,30 +637,10 @@ DWORD WINAPI clientSend(LPVOID lpParam)
         // wants to send to server
         if (keysPressed.size() != 0)
         {
-            if (send(server,
-                (char*)&keysPressed[0],
-                4, 0)
-                == SOCKET_ERROR) {
-                cout << "send failed with error: "
-                    << WSAGetLastError() << endl;
-                keysPressed.erase(keysPressed.begin());
-                return -1;
-            }
+            sendall(server, (char*)&keysPressed[0], 4);
+
             keysPressed.erase(keysPressed.begin());
 
-        }
-        else if (messages.size() != 0)
-        {
-            if (send(server,
-                messages[0],
-                sizeof(messages[0]), 0)
-                == SOCKET_ERROR) {
-                cout << "send failed with error: "
-                    << WSAGetLastError() << endl;
-                messages.erase(messages.begin());
-                return -1;
-            }
-            messages.erase(messages.begin());
         }
 
         // If client exit
@@ -816,12 +852,21 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
             0,
             &tid);
 
+
+        serverReceiving = CreateThread(NULL,
+            0,
+            serverReceive,
+            &sAccept,
+            0,
+            &tid);
+
         while (GetMessage(&msgServer, nullptr, 0, 0)) {
             TranslateMessage(&msgServer);
             DispatchMessage(&msgServer);
         }
 
         WaitForSingleObject(serverSending, INFINITE);
+        WaitForSingleObject(serverReceiving, INFINITE);
 
         CloseWindow(server_hwnd);
         break;
@@ -875,12 +920,20 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
             0,
             &tid);
 
+        clientSending = CreateThread(NULL,
+            0,
+            clientSend,
+            &sTCP,
+            0,
+            &tid);
+
         while (GetMessage(&msgServer, nullptr, 0, 0)) {
             TranslateMessage(&msgServer);
             DispatchMessage(&msgServer);
         }
 
         WaitForSingleObject(clientReceiving, INFINITE);
+        WaitForSingleObject(clientSending, INFINITE);
 
         CloseWindow(client_hwnd);
         break;
@@ -1117,7 +1170,7 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         break;
 
     case WM_LBUTTONDOWN:
-        keysPressed.push_back(param);
+        keysPressed.push_back(MOUSE_PRESS);
         xPos = LOWORD(lparam);
         yPos = HIWORD(lparam);
 
@@ -1133,7 +1186,7 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         break;
 
     case WM_LBUTTONUP:
-        keysPressed.push_back(param);
+        keysPressed.push_back(MOUSE_PRESS);
         xPos = LOWORD(lparam);
         yPos = HIWORD(lparam);
 
@@ -1149,7 +1202,7 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         break;
 
     case WM_MBUTTONDOWN:
-        keysPressed.push_back(param);
+        keysPressed.push_back(MOUSE_PRESS);
         xPos = LOWORD(lparam);
         yPos = HIWORD(lparam);
 
@@ -1165,7 +1218,7 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         break;
 
     case WM_MBUTTONUP:
-        keysPressed.push_back(param);
+        keysPressed.push_back(MOUSE_PRESS);
         xPos = LOWORD(lparam);
         yPos = HIWORD(lparam);
 
@@ -1181,7 +1234,7 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         break;
 
     case WM_RBUTTONDOWN:
-        keysPressed.push_back(param);
+        keysPressed.push_back(MOUSE_PRESS);
         xPos = LOWORD(lparam);
         yPos = HIWORD(lparam);
 
@@ -1197,7 +1250,7 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         break;
 
     case WM_RBUTTONUP:
-        keysPressed.push_back(param);
+        keysPressed.push_back(MOUSE_PRESS);
         xPos = LOWORD(lparam);
         yPos = HIWORD(lparam);
 
@@ -1215,21 +1268,25 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         break;
 
     case WM_KEYDOWN:
+        keysPressed.push_back(KEY_PRESS);
         keysPressed.push_back(param);
         keysPressed.push_back(0);
         break;
 
     case WM_KEYUP:
+        keysPressed.push_back(KEY_PRESS);
         keysPressed.push_back(param);
         keysPressed.push_back(KEYEVENTF_KEYUP);
         break;
 
     case WM_SYSKEYDOWN:
+        keysPressed.push_back(KEY_PRESS);
         keysPressed.push_back(param);
         keysPressed.push_back(0);
         break;
 
     case WM_SYSKEYUP:
+        keysPressed.push_back(KEY_PRESS);
         keysPressed.push_back(param);
         keysPressed.push_back(KEYEVENTF_KEYUP);
         break;
@@ -1254,7 +1311,7 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         //SetBitmapBits(screenshot, sizeof(bufferImage), bufferImage);
         if (screenshot != NULL)
             Screen::DrawBitmap(hDC, 0, 0, rc.right, rc.bottom, screenshot, SRCCOPY);
-        //DeleteObject(screenshot);
+        DeleteObject(screenshot);
         ReleaseDC(hwnd, hDC);
         break;
 
