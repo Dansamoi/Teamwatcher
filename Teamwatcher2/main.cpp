@@ -51,6 +51,7 @@ SOCKET sTCP;
 
 SOCKET sAccept;
 
+SOCKADDR_IN from, to;
 
 int gwstatIP = 0;
 int gwstatPort = 0;
@@ -154,17 +155,25 @@ void sendall(SOCKET s, const char* pdata, int buflen) {
     int sent = 0;
     while (buflen > 0) {
         sent = send(s, pdata, buflen, 0);
-        if (sent == -1) break;
+        if (sent == -1 || sent == 0) break;
         pdata += sent;
         buflen -= sent;
     }
 }
 
-void sendallUDP(SOCKET s, const char* pdata, int buflen, sockaddr to) {
+void sendallUDP(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN to) {
     int sent = 0;
+    int sendLen = DATA_BUFSIZE * 10;
+    int error;
     while (buflen > 0) {
-        sent = sendto(s, pdata, buflen, 0, &to, sizeof(to));
-        if (sent == -1) break;
+        if (buflen < sendLen) 
+            sendLen = buflen;
+        sent = sendto(s, pdata, sendLen, 0, (sockaddr*)&to, sizeof(to));
+        if (sent == -1) {
+            error = WSAGetLastError();
+            continue;
+        }
+        if (sent == 0) break;
         pdata += sent;
         buflen -= sent;
     }
@@ -174,18 +183,25 @@ void recvall(SOCKET s, const char* pdata, int buflen) {
     int recieved = 0;
     while (buflen > 0) {
         recieved = recv(s, (char*)pdata, buflen, 0);
-        if (recieved == -1) break;
+        if (recieved == -1 || recieved == 0) break;
         pdata += recieved;
         buflen -= recieved;
     }
 }
 
-void recvallUDP(SOCKET s, const char* pdata, int buflen, sockaddr from) {
+void recvallUDP(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN from) {
     int sizeOfFrom = sizeof(from);
     int recieved = 0;
+    int recvLen = DATA_BUFSIZE * 10;
+    int error;
     while (buflen > 0) {
-        recieved = recvfrom(s, (char*)pdata, buflen, 0, &from, &sizeOfFrom);
-        if (recieved == -1) break;
+        if (buflen < recvLen)
+            recvLen = buflen;
+        recieved = recvfrom(s, (char*)pdata, recvLen, 0, (sockaddr*)&from, &sizeOfFrom);
+        if (recieved == -1) {
+            error = WSAGetLastError();
+            continue;
+        }
         pdata += recieved;
         buflen -= recieved;
     }
@@ -299,6 +315,7 @@ DWORD WINAPI serverReceive(LPVOID lpParam)
     int command;
 
     // Created client socket
+
     SOCKET client = *(SOCKET*)lpParam;
 
     // Server executes continuously
@@ -392,6 +409,58 @@ DWORD WINAPI serverSend(LPVOID lpParam)
     return 1;
 }
 
+DWORD WINAPI serverSendUDP(LPVOID lpParam)
+{
+    // Created buffer[] to
+    // receive message
+    //char buffer[1920 * 1080] = { 0 };
+
+    // Created client socket
+    SOCKET client = *(SOCKET*)lpParam;
+    //screenshot = Screen::ResizeImage(Screen::GetScreenShot(), 1920, 1080);
+    //bufferImage = Screen::GetPixelsFromHBITMAP(screenshot);
+    //int size = sizeof(bufferImage);
+    //sendall(client, (char*)&size, sizeof(int));
+
+    // Server executes continuously
+    clock_t last_cycle = clock();
+    screenshot = Screen::ResizeImage(Screen::GetScreenShot(), 1280, 720);
+    Screen::HBITMAPToPixels(screenshot, Pixels, 1280, 720, 32);
+    int sz = Pixels.size();
+    sendallUDP(client, (char*)&sz, sizeof(sz), to);
+    while (true) {
+        screenshot = Screen::GetScreenShot();
+        clock_t next_cycle = clock();
+        double duration = (next_cycle - last_cycle) / (double)CLOCKS_PER_SEC;
+        last_cycle = next_cycle;
+        screenshot = Screen::ResizeImage(Screen::GetScreenShot(), 1280, 720);
+        Screen::HBITMAPToPixels(screenshot, Pixels, 1280, 720, 32);
+        //bufferImage = Screen::GetPixelsFromHBITMAP(screenshot);
+        // Input message server
+        // wants to send to client
+
+        // If sending failed
+        // return -1
+        //int sz = Pixels.size();
+
+        //sendallUDP(client, (char*)&sz, sizeof(sz), to);
+        sendallUDP(client, (char*)&Pixels.front(), Pixels.size() * sizeof(Pixels.front()), to);
+        //delete[] bufferImage;
+        DeleteObject(screenshot);
+        Pixels.clear();
+
+        //waitKey(FRAME_INTERVAL);
+
+        // If server exit
+        //if (strcmp(buffer, "exit") == 0) {
+        //    cout << "Thank you for using the application"
+        //        << endl;
+        //    break;
+        //}
+    }
+    return 1;
+}
+
 // Function that receive data from server
 DWORD WINAPI clientReceive(LPVOID lpParam)
 {
@@ -422,8 +491,59 @@ DWORD WINAPI clientReceive(LPVOID lpParam)
         //}
         recvall(server, (char*)&Pixels.front(), size * sizeof(Pixels.front()));
         if (!Pixels.empty())
-            //DeleteObject(screenshot);
+            DeleteObject(screenshot);
             screenshot = Screen::HBITMAPFromPixels(Pixels, 1280, 720, 32);
+
+        // If Server exits
+        //if (strcmp(buffer, "exit") == 0) {
+        //    cout << "Server disconnected."
+        //        << endl;
+        //    return 1;
+       // }
+
+        // Print the message
+        // given by server that
+        // was stored in buffer
+        //cout << "Server: " << buffer << endl;
+
+        // Clear buffer message
+        //memset(buffer, 0, sizeof(buffer));
+        //memset(bufferImage, 0, sizeof(bufferImage));
+    }
+    return 1;
+}
+
+DWORD WINAPI clientReceiveUDP(LPVOID lpParam)
+{
+    // Created buffer[] to
+    // receive message
+    //char buffer[1920 * 1080] = { 0 };
+    //BYTE bufferImage[1920 * 1080] = { 0 };
+
+    // Created server socket
+    SOCKET server = *(SOCKET*)lpParam;
+    int size = 0;
+    recvallUDP(server, (char*)&size, sizeof(size), from);
+    Pixels.resize(size);
+    // Client executes continuously
+    while (true) {
+
+        // If received buffer gives
+        // error then return -1
+        //DeleteObject(screenshot);
+        //Pixels.clear();
+        //if (recv(server, (char*)&Pixels.front(), size*sizeof(Pixels.front()), 0) == SOCKET_ERROR) {
+        //    cout << "recv function failed with error: "
+        //        << WSAGetLastError()
+        //        << endl;
+        //    //return -1;
+        //}
+        recvallUDP(server, (char*)&Pixels.front(), size * sizeof(Pixels.front()), from);
+
+        if (!Pixels.empty())
+            DeleteObject(screenshot);
+
+        screenshot = Screen::HBITMAPFromPixels(Pixels, 1280, 720, 32);
 
         // If Server exits
         //if (strcmp(buffer, "exit") == 0) {
@@ -682,12 +802,17 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
         InternetAddrUDP.sin_addr.s_addr = htonl(INADDR_ANY);
         InternetAddrUDP.sin_port = 6000;
 
-        bind(sUDP, (PSOCKADDR)&InternetAddr, sizeof(InternetAddr));
+        bind(sUDP, (PSOCKADDR)&InternetAddrUDP, sizeof(InternetAddrUDP));
+
+        to.sin_family = AF_INET;
+        //to.sin_addr.s_addr = htonl(INADDR_ANY);
+        to.sin_addr.s_addr = inet_addr("127.0.0.1");
+        to.sin_port = 5000;
 
         serverSending = CreateThread(NULL,
             0,
-            serverSend,
-            &sAccept,
+            serverSendUDP,
+            &sUDP,
             0,
             &tid);
 
@@ -741,12 +866,12 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
         InternetAddrUDP.sin_addr.s_addr = htonl(INADDR_ANY);
         InternetAddrUDP.sin_port = 5000;
 
-        bind(sUDP, (PSOCKADDR)&InternetAddr, sizeof(InternetAddr));
+        bind(sUDP, (PSOCKADDR)&InternetAddrUDP, sizeof(InternetAddrUDP));
 
         clientReceiving = CreateThread(NULL,
             0,
-            clientReceive,
-            &sTCP,
+            clientReceiveUDP,
+            &sUDP,
             0,
             &tid);
 

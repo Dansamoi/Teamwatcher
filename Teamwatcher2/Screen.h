@@ -18,22 +18,18 @@ class Screen
 public:
 	static HBITMAP GetScreenShot(void)
     {
-        int x, y, w, h;
+        int w = GetSystemMetrics(SM_CXSCREEN);
 
-        // get screen dimensions
-        x = GetSystemMetrics(SM_XVIRTUALSCREEN);
-        y = GetSystemMetrics(SM_YVIRTUALSCREEN);
-        w = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-        h = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+        int h = GetSystemMetrics(SM_CYSCREEN);
 
         // copy screen to bitmap
         HDC hScreen = GetDC(NULL);
         HDC hDC = CreateCompatibleDC(hScreen);
         //HBITMAP hBitmap = CreateCompatibleBitmap(hScreen, w, h);
-        HBITMAP hBitmap = CreateCompatibleBitmap(hScreen, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+        HBITMAP hBitmap = CreateCompatibleBitmap(hScreen, w, h);
         HGDIOBJ old_obj = SelectObject(hDC, hBitmap);
        // BOOL bRet = BitBlt(hDC, 0, 0, w, h, hScreen, x, y, SRCCOPY);
-        BOOL bRet = BitBlt(hDC, 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), hScreen, 0, 0, SRCCOPY);
+        BOOL bRet = BitBlt(hDC, 0, 0, w, h, hScreen, 0, 0, SRCCOPY);
 
         // clean up
         SelectObject(hDC, old_obj);
