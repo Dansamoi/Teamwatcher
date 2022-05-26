@@ -121,13 +121,14 @@ RECT rc = { 0 };
 
 int wError;
 
-vector<INT> keysPressed;
-vector<char*> messages;
+vector<uint32_t> keysPressed;
 
 HBITMAP screenshot = NULL;
 
 int command;
 float xPos, yPos;
+
+int serverUDPport, clientUDPport;
 
 void clean_exit() {
     closesocket(sUDP);
@@ -339,14 +340,25 @@ void recieveKeyPress(SOCKET s) {
 
 //void sendMousePress(SOCKET s);
 void recieveMousePress(SOCKET s) {
-    int xPos = 0;
-    int yPos = 0;
+    float xPos = 0;
+    float yPos = 0;
+    int w, h;
+    float xpos, ypos;
     int code_up_down = 0;
 
 
-    recvall(s, (char*)&xPos, sizeof(int));
-    recvall(s, (char*)&yPos, sizeof(int));
+    recvall(s, (char*)&xPos, sizeof(float));
+    recvall(s, (char*)&yPos, sizeof(float));
+    recvall(s, (char*)&w, sizeof(int));
+    recvall(s, (char*)&h, sizeof(int));
+
+    xpos = (float)xPos / w;
+    ypos = (float)yPos / h;
+
     recvall(s, (char*)&code_up_down, sizeof(int));
+
+    xpos *= 65535; // */ GetSystemMetrics(SM_CXFULLSCREEN)
+    ypos *= 65535; // */ GetSystemMetrics(SM_CYFULLSCREEN)
 
     InputSimulator::SimulateMouseInput(code_up_down, xPos * GetSystemMetrics(SM_CXSCREEN), yPos * GetSystemMetrics(SM_CYSCREEN));
 
@@ -359,7 +371,7 @@ DWORD WINAPI serverReceive(LPVOID lpParam)
 {
     // Created buffer[] to
     // receive message
-    char buffer[sizeof(int)] = { 0 };
+    //char buffer[sizeof(int)] = { 0 };
     int command;
 
     // Created client socket
@@ -371,7 +383,7 @@ DWORD WINAPI serverReceive(LPVOID lpParam)
 
         // If received buffer gives
         // error then return -1
-        if (recv(client, buffer, sizeof(int), 0)
+        if (recv(client, (char*)&command, sizeof(int), 0)
             == SOCKET_ERROR) {
             cout << "recv function failed with error "
                 << WSAGetLastError() << endl;
@@ -379,7 +391,7 @@ DWORD WINAPI serverReceive(LPVOID lpParam)
         }
 
         // char to int
-        sscanf_s(buffer, "%d", &command);
+        //sscanf_s(buffer, "%d", &command);
 
         switch (command)
         {
@@ -469,7 +481,6 @@ DWORD WINAPI serverSendUDP(LPVOID lpParam)
     //bufferImage = Screen::GetPixelsFromHBITMAP(screenshot);
     //int size = sizeof(bufferImage);
     //sendall(client, (char*)&size, sizeof(int));
-
     // Server executes continuously
     double delay = 1 / 30 * CLOCKS_PER_SEC;
     clock_t last_cycle = clock();
@@ -635,20 +646,20 @@ DWORD WINAPI clientSend(LPVOID lpParam)
 
         // Input message client
         // wants to send to server
-        if (keysPressed.size() != 0)
+        if (!keysPressed.empty())
         {
-            sendall(server, (char*)&keysPressed[0], 4);
+            sendall(server, (char*)&keysPressed[0], sizeof(float));
 
             keysPressed.erase(keysPressed.begin());
 
         }
 
         // If client exit
-        if (strcmp(buffer, "exit") == 0) {
-            cout << "Thank you for using the application"
-                << endl;
-            break;
-        }
+        //if (strcmp(buffer, "exit") == 0) {
+        //    cout << "Thank you for using the application"
+        //        << endl;
+        //    break;
+        //}
     }
     return 1;
 }
@@ -840,10 +851,12 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
 
         bind(sUDP, (PSOCKADDR)&InternetAddrUDP, sizeof(InternetAddrUDP));
 
-        to.sin_family = AF_INET;
+        //to.sin_family = AF_INET;
         //to.sin_addr.s_addr = htonl(INADDR_ANY);
-        to.sin_addr.s_addr = inet_addr("127.0.0.1");
-        to.sin_port = 5000;
+        //to.sin_addr.s_addr = inet_addr("127.0.0.1"); //his address saved while accept
+        recvall(sAccept, (char*)&clientUDPport, sizeof(int));
+
+        to.sin_port = clientUDPport;
 
         serverSending = CreateThread(NULL,
             0,
@@ -910,8 +923,11 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
         InternetAddrUDP.sin_family = AF_INET;
         InternetAddrUDP.sin_addr.s_addr = htonl(INADDR_ANY);
         InternetAddrUDP.sin_port = 5000;
+        serverUDPport = 5000;
 
         bind(sUDP, (PSOCKADDR)&InternetAddrUDP, sizeof(InternetAddrUDP));
+
+        sendall(sTCP, (char*)&serverUDPport, sizeof(int));
 
         clientReceiving = CreateThread(NULL,
             0,
@@ -1037,7 +1053,7 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
             {
                 MessageBox(NULL, TEXT("listen() is OK!"), NULL, MB_OK);
             }
-            sAccept = accept(sTCP, NULL, NULL);
+            sAccept = accept(sTCP, (sockaddr*)&to, NULL);
             //WSAAsyncSelect(sTCP, hwnd, HOST_MSG_NOTIFICATION, FD_ACCEPT | FD_CONNECT | FD_READ | FD_CLOSE);
             commSide = SERVER_MENU;
             break;
@@ -1174,13 +1190,13 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         xPos = LOWORD(lparam);
         yPos = HIWORD(lparam);
 
-        GetWindowRect(hwnd, &Rect);
+        GetClientRect(hwnd, &Rect);
         MapWindowPoints(HWND_DESKTOP, GetParent(hwnd), (LPPOINT)&Rect, 2);
 
-        xPos /= Rect.right - Rect.left;
-        yPos /= Rect.bottom - Rect.top;
         keysPressed.push_back(xPos);
         keysPressed.push_back(yPos);
+        keysPressed.push_back(Rect.right - Rect.left); //width
+        keysPressed.push_back(Rect.bottom - Rect.top); //height
 
         keysPressed.push_back(MOUSEEVENTF_LEFTDOWN);
         break;
@@ -1190,13 +1206,13 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         xPos = LOWORD(lparam);
         yPos = HIWORD(lparam);
 
-        GetWindowRect(hwnd, &Rect);
+        GetClientRect(hwnd, &Rect);
         MapWindowPoints(HWND_DESKTOP, GetParent(hwnd), (LPPOINT)&Rect, 2);
 
-        xPos /= Rect.right - Rect.left;
-        yPos /= Rect.bottom - Rect.top;
         keysPressed.push_back(xPos);
         keysPressed.push_back(yPos);
+        keysPressed.push_back(Rect.right - Rect.left); //width
+        keysPressed.push_back(Rect.bottom - Rect.top); //height
 
         keysPressed.push_back(MOUSEEVENTF_LEFTUP);
         break;
@@ -1206,13 +1222,13 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         xPos = LOWORD(lparam);
         yPos = HIWORD(lparam);
 
-        GetWindowRect(hwnd, &Rect);
+        GetClientRect(hwnd, &Rect);
         MapWindowPoints(HWND_DESKTOP, GetParent(hwnd), (LPPOINT)&Rect, 2);
 
-        xPos /= Rect.right - Rect.left;
-        yPos /= Rect.bottom - Rect.top;
         keysPressed.push_back(xPos);
         keysPressed.push_back(yPos);
+        keysPressed.push_back(Rect.right - Rect.left); //width
+        keysPressed.push_back(Rect.bottom - Rect.top); //height
 
         keysPressed.push_back(MOUSEEVENTF_MIDDLEDOWN);
         break;
@@ -1222,13 +1238,13 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         xPos = LOWORD(lparam);
         yPos = HIWORD(lparam);
 
-        GetWindowRect(hwnd, &Rect);
+        GetClientRect(hwnd, &Rect);
         MapWindowPoints(HWND_DESKTOP, GetParent(hwnd), (LPPOINT)&Rect, 2);
 
-        xPos /= Rect.right - Rect.left;
-        yPos /= Rect.bottom - Rect.top;
         keysPressed.push_back(xPos);
         keysPressed.push_back(yPos);
+        keysPressed.push_back(Rect.right - Rect.left); //width
+        keysPressed.push_back(Rect.bottom - Rect.top); //height
 
         keysPressed.push_back(MOUSEEVENTF_MIDDLEUP);
         break;
@@ -1237,14 +1253,13 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         keysPressed.push_back(MOUSE_PRESS);
         xPos = LOWORD(lparam);
         yPos = HIWORD(lparam);
-
-        GetWindowRect(hwnd, &Rect);
+        GetClientRect(hwnd, &Rect);
         MapWindowPoints(HWND_DESKTOP, GetParent(hwnd), (LPPOINT)&Rect, 2);
 
-        xPos /= Rect.right - Rect.left;
-        yPos /= Rect.bottom - Rect.top;
         keysPressed.push_back(xPos);
         keysPressed.push_back(yPos);
+        keysPressed.push_back(Rect.right - Rect.left); //width
+        keysPressed.push_back(Rect.bottom - Rect.top); //height
 
         keysPressed.push_back(MOUSEEVENTF_RIGHTDOWN);
         break;
@@ -1256,13 +1271,13 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
 
         Rect;
 
-        GetWindowRect(hwnd, &Rect);
+        GetClientRect(hwnd, &Rect);
         MapWindowPoints(HWND_DESKTOP, GetParent(hwnd), (LPPOINT)&Rect, 2);
 
-        xPos /= Rect.right - Rect.left;
-        yPos /= Rect.bottom - Rect.top;
         keysPressed.push_back(xPos);
         keysPressed.push_back(yPos);
+        keysPressed.push_back(Rect.right - Rect.left); //width
+        keysPressed.push_back(Rect.bottom - Rect.top); //height
 
         keysPressed.push_back(MOUSEEVENTF_RIGHTUP);
         break;
@@ -1309,8 +1324,8 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         //Screen::CreateHBITMAPfromPixels(screenshot, bufferImage);
         //delete[] bufferImage;
         //SetBitmapBits(screenshot, sizeof(bufferImage), bufferImage);
-        if (screenshot != NULL)
-            Screen::DrawBitmap(hDC, 0, 0, rc.right, rc.bottom, screenshot, SRCCOPY);
+        //if (screenshot != NULL)
+        Screen::DrawBitmap(hDC, 0, 0, rc.right, rc.bottom, screenshot, SRCCOPY);
         DeleteObject(screenshot);
         ReleaseDC(hwnd, hDC);
         break;

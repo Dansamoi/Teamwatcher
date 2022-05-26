@@ -25,7 +25,7 @@ public:
 		//Inputs[2].type = INPUT_MOUSE;
 		//Inputs[2].mi.dwFlags = MOUSEEVENTF_LEFTUP;
 
-		SendInput(1, Inputs, sizeof(INPUT));
+		SendInput(2, Inputs, sizeof(INPUT));
 	}
 
 	static void SimulateKeyInput(int inputKey, int flag) {
