@@ -21,22 +21,28 @@
 #include "InputSimulator.h"
 #pragma comment(lib,"WS2_32")
 
-LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, LPARAM lparam);
-LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, LPARAM lparam);
-LRESULT CALLBACK ServerWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, LPARAM lparam);
+// Message handling functions for all the windows
+LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, LPARAM lparam); // for start window
+LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, LPARAM lparam); // for client window
+LRESULT CALLBACK ServerWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, LPARAM lparam); // for server window
 
 using namespace std;
 
+// Handles for all the threads
 HANDLE serverSending, clientReceiving, serverReceiving, clientSending;
 
 int threadExitFlag = 1;
 
 RECT Rect;
 
+// Vector for receive and send all the pixels of the image
 std::vector<uint8_t> Pixels = vector<uint8_t>();
-BYTE* bufferImage;
 
-HWND textfield;
+std::vector<uint8_t> ScreenPacketPixel = vector<uint8_t>();;
+int SerialNum = 0;
+
+BYTE* bufferImage; // delete this
+
 HWND ipText;
 HWND joinPortText;
 HWND joinPassText;
@@ -47,11 +53,16 @@ wchar_t ipSaved[20];
 wchar_t portSaved[20];
 wchar_t passSaved[20];
 
+// UDP socket for sending and recieving the image pixels
 SOCKET sUDP;
+
+// TCP socket for server listening for connections and for client key press input sending
 SOCKET sTCP;
 
+// TCP socket for server receive client key press input
 SOCKET sAccept;
 
+// SOCKADDR_IN struct to save information of client UDP socket for the server and server UDP socket for the client
 SOCKADDR_IN from, to;
 
 int gwstatIP = 0;
@@ -70,7 +81,6 @@ DWORD SendBytes;
 DWORD RecvBytes;
 
 DWORD tid;
-HANDLE t1, t2;
 
 HWND chatText;
 
@@ -126,26 +136,43 @@ vector<uint32_t> keysPressed;
 HBITMAP screenshot = NULL;
 
 int command;
-float xPos, yPos;
+int xPos, yPos;
 
 int serverUDPport, clientUDPport;
+int addrlen;
 
 void clean_exit() {
+    /* 
+    The function called before exiting
+    from the program for clean exit.
+    */
+
+    //closing all sockets
     closesocket(sUDP);
     closesocket(sTCP);
     closesocket(sAccept);
     WSACleanup();
+
+    // closing threads according to communication side
     switch (commSide) {
     case CLIENT_MENU:
         TerminateThread(clientReceiving, 0);
+        TerminateThread(clientSending, 0);
         break;
     case HOST_MENU:
+        TerminateThread(serverReceiving, 0);
         TerminateThread(serverSending, 0);
         break;
     }
 }
 
 void sendall(SOCKET s, const char* pdata, int buflen) {
+    /*
+    The function sends all the data according to buflen.
+    send() can send just part of the data, sendall() assures
+    it sends all of it.
+    */
+
     int sent = 0;
     while (buflen > 0) {
         sent = send(s, pdata, buflen, 0);
@@ -156,6 +183,13 @@ void sendall(SOCKET s, const char* pdata, int buflen) {
 }
 
 void sendallUDP(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN to) {
+    /*
+    The function sends all the data according to buflen.
+    it simmilar to sendall() but for UDP sockets.
+    sendto() can send just part of the data, sendallUDP() assures
+    it sends all of it.
+    */
+
     int sent = 0;
     int sendLen = DATA_BUFSIZE * 10;
     int error;
@@ -174,6 +208,12 @@ void sendallUDP(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN to) {
 }
 
 void recvall(SOCKET s, const char* pdata, int buflen) {
+    /*
+    The function receive all the data according to buflen.
+    recv() can receive just part of the data, recvall() assures
+    it receives all of it.
+    */
+
     int recieved = 0;
     while (buflen > 0) {
         recieved = recv(s, (char*)pdata, buflen, 0);
@@ -184,6 +224,13 @@ void recvall(SOCKET s, const char* pdata, int buflen) {
 }
 
 void recvallUDP(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN from) {
+    /*
+    The function receive all the data according to buflen.
+    it simmilar to recvall() but for UDP sockets.
+    recvfrom() can receive just part of the data, recvallUDP() assures
+    it receives all of it.
+    */
+
     int sizeOfFrom = sizeof(from);
     int recieved = 0;
     int recvLen = DATA_BUFSIZE * 10;
@@ -225,130 +272,39 @@ void recvallUDP(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN from) {
     }
 }
 
-void get_command(SOCKET s, char* command) {
-    if (strcmp(command, "-1") == 0) return;
-    char buffer[128];
-    std::string result;
-    FILE* pipe = _popen(command, "r"); // creating a pipe to the program
-    if (!pipe) {
-        return;
-    }
-    while (fgets(buffer, sizeof(buffer), pipe) != NULL) { // reading from the pipe
-        result += buffer;
-    }
-    _pclose(pipe);
-    std::string length = std::string(6 - std::to_string(result.length()).length(), '0') + std::to_string(result.length());
-    send(s, length.c_str(), length.length(), 0);
-    sendall(s, result.c_str(), result.length());
-}
-
-void download(SOCKET s) {
-    char path[1024];
-    ZeroMemory(path, 1024);
-    recv(s, path, 1024, 0); // receiving the path to the file
-    if (strcmp(path, "-1") == 0) {
-        return;
-    }
-
-    struct _stat64 stat;
-    if (_stat64(path, &stat) != 0) { // checking if the file exists
-        send(s, "-1", 2, 0);
-        return;
-    }
-    __int64 filesize = stat.st_size; // getting the file size
-    std::string filesize_str = std::to_string(filesize);
-    std::string filesize_str_length = std::string(2 - std::to_string(filesize_str.length()).length(), '0') + std::to_string(filesize_str.length());
-    send(s, filesize_str_length.c_str(), filesize_str_length.length(), 0);
-    send(s, filesize_str.c_str(), filesize_str.length(), 0); // sending the file size
-
-    char command[1024];
-    ZeroMemory(command, 1024);
-    recv(s, command, 1024, 0); // receiving and executing the hash command
-    get_command(s, command);
-
-    FILE* fp = fopen(path, "rb"); // trying to open the file
-    if (fp == NULL) {
-        send(s, "0", 1, 0);
-        return;
-    }
-    send(s, "1", 1, 0);
-
-    char data[4096];
-    int read = 0;
-    do { // loop to send the contents of the file
-        ZeroMemory(data, 4096);
-        read = fread(data, 1, 4096, fp);
-        sendall(s, data, read);
-    } while (read == 4096);
-
-    fclose(fp); // closing the file handle
-}
-
-void upload(SOCKET s) {
-    char filesize_str[32];
-    ZeroMemory(filesize_str, 32);
-    recv(s, filesize_str, 32, 0); // receiving the size of the file to be uploaded
-    if (strcmp(filesize_str, "-1") == 0) {
-        return;
-    }
-
-    int filesize;
-    sscanf_s(filesize_str, "%d", &filesize); // converting it to an int
-
-    char path[1024];
-    ZeroMemory(path, 1024);
-    recv(s, path, 1024, 0); // receiving the path to where the file will be uploaded
-
-    FILE* fp = fopen(path, "wb"); // opening the destination file
-    if (fp == NULL) {
-        send(s, "0", 1, 0);
-        return;
-    }
-    send(s, "1", 1, 0);
-
-    int received = 0, wrote = 0, buflen;
-    char data[4096];
-    while (filesize - received > 0) { // loop to receive all the contents of the uploaded file
-        ZeroMemory(data, 4096);
-        buflen = __min(4096, filesize - received);
-        received += recv(s, data, buflen, MSG_WAITALL);
-        wrote += fwrite(data, 1, buflen, fp);
-    }
-
-    fclose(fp); // closing the file handle 
-
-    char command[1024];
-    ZeroMemory(command, 1024);
-    recv(s, command, 1024, 0); // receiving and executing the hash command 
-    get_command(s, command);
-}
-
-
 //void sendScreen(SOCKET s);
 //void recieveScreen(SOCKET s);
 //void sendKeyPress(SOCKET s);
 void recieveKeyPress(SOCKET s) {
+    /*
+    The function receive all the Key Press Input data,
+    and simulates the input on the computer.
+    */
+
     int code = 0;
     int up_down = 0;
 
+    // receive key code
     recvall(s, (char*)&code, sizeof(int));
+
+    // receive if the key up or down code
     recvall(s, (char*)&up_down, sizeof(int));
 
+    // simulate the input
     InputSimulator::SimulateKeyInput(code, up_down);
-
 }
 
 //void sendMousePress(SOCKET s);
 void recieveMousePress(SOCKET s) {
-    float xPos = 0;
-    float yPos = 0;
+    int xPos = 0;
+    int yPos = 0;
     int w, h;
     float xpos, ypos;
     int code_up_down = 0;
 
 
-    recvall(s, (char*)&xPos, sizeof(float));
-    recvall(s, (char*)&yPos, sizeof(float));
+    recvall(s, (char*)&xPos, sizeof(int));
+    recvall(s, (char*)&yPos, sizeof(int));
     recvall(s, (char*)&w, sizeof(int));
     recvall(s, (char*)&h, sizeof(int));
 
@@ -360,7 +316,7 @@ void recieveMousePress(SOCKET s) {
     xpos *= 65535; // */ GetSystemMetrics(SM_CXFULLSCREEN)
     ypos *= 65535; // */ GetSystemMetrics(SM_CYFULLSCREEN)
 
-    InputSimulator::SimulateMouseInput(code_up_down, xPos * GetSystemMetrics(SM_CXSCREEN), yPos * GetSystemMetrics(SM_CYSCREEN));
+    InputSimulator::SimulateMouseInput(code_up_down, xpos, ypos);
 
 
 }
@@ -847,7 +803,7 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
 
         InternetAddrUDP.sin_family = AF_INET;
         InternetAddrUDP.sin_addr.s_addr = htonl(INADDR_ANY);
-        InternetAddrUDP.sin_port = 6000;
+        InternetAddrUDP.sin_port = 0; // let the os choose port
 
         bind(sUDP, (PSOCKADDR)&InternetAddrUDP, sizeof(InternetAddrUDP));
 
@@ -894,7 +850,7 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
 
         RegisterClass(&wcClient);
 
-        // Create the start window.
+        // Create the CLIENT window.
         client_hwnd = CreateWindowEx(
             0,                              // Optional window styles.
             CLIENT_CLASS_NAME,                     // Window class
@@ -922,10 +878,14 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
 
         InternetAddrUDP.sin_family = AF_INET;
         InternetAddrUDP.sin_addr.s_addr = htonl(INADDR_ANY);
-        InternetAddrUDP.sin_port = 5000;
-        serverUDPport = 5000;
+        InternetAddrUDP.sin_port = 0; // letting the os decide
+        //serverUDPport = 5000;
 
-        bind(sUDP, (PSOCKADDR)&InternetAddrUDP, sizeof(InternetAddrUDP));
+        bind(sUDP, (sockaddr*)&InternetAddrUDP, sizeof(InternetAddrUDP));
+        addrlen = sizeof(InternetAddrUDP);
+        getsockname(sUDP, (struct sockaddr*)&InternetAddrUDP, &addrlen); // read binding
+
+        memcpy(&serverUDPport, &InternetAddrUDP.sin_port, sizeof(serverUDPport));  // get the port number
 
         sendall(sTCP, (char*)&serverUDPport, sizeof(int));
 
@@ -1053,7 +1013,10 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
             {
                 MessageBox(NULL, TEXT("listen() is OK!"), NULL, MB_OK);
             }
-            sAccept = accept(sTCP, (sockaddr*)&to, NULL);
+            addrlen = sizeof(to);
+            sAccept = accept(sTCP, (sockaddr*)&to, &addrlen);
+            addrlen = sizeof(to);
+            error = getpeername(sAccept, (sockaddr*)&to, &addrlen);
             //WSAAsyncSelect(sTCP, hwnd, HOST_MSG_NOTIFICATION, FD_ACCEPT | FD_CONNECT | FD_READ | FD_CLOSE);
             commSide = SERVER_MENU;
             break;
