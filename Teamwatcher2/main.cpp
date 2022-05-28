@@ -176,7 +176,7 @@ void sendall(SOCKET s, const char* pdata, int buflen) {
     int sent = 0;
     while (buflen > 0) {
         sent = send(s, pdata, buflen, 0);
-        if (sent == -1 || sent == 0) break;
+        if (sent == -1 || sent == 0) break; // 0 - closed socket, -1 - SOCKET_ERROR
         pdata += sent;
         buflen -= sent;
     }
@@ -217,7 +217,7 @@ void recvall(SOCKET s, const char* pdata, int buflen) {
     int recieved = 0;
     while (buflen > 0) {
         recieved = recv(s, (char*)pdata, buflen, 0);
-        if (recieved == -1 || recieved == 0) break;
+        if (recieved == -1 || recieved == 0) break; // 0 - closed socket, -1 - SOCKET_ERROR
         pdata += recieved;
         buflen -= recieved;
     }
@@ -321,17 +321,61 @@ void recieveMousePress(SOCKET s) {
 
 }
 
+
+void sendallScreenshot(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN to) {
+    /*
+
+    */
+
+    int sent = 0;
+    int sendLen = DATA_BUFSIZE * 5 + sizeof(int);
+    int error;
+    ScreenPacketPixel.resize(sendLen);
+    char* pPacket = (char*)&ScreenPacketPixel;
+
+    for (int i = 0; i < 1280*720*4/(DATA_BUFSIZE * 5); i++) {
+        sendLen = DATA_BUFSIZE * 5 + sizeof(int);
+        memcpy(&ScreenPacketPixel, &i, sizeof(int));
+        memcpy(&ScreenPacketPixel + sizeof(int), pdata, sendLen - sizeof(int));
+
+        while (sendLen > 0) {
+            sent = sendto(s, pPacket, sendLen, 0, (sockaddr*)&to, sizeof(to));
+            if (sent == SOCKET_ERROR) {
+                error = WSAGetLastError();
+                break;
+            }
+            if (sent == 0) break;
+            pPacket += sent;
+            sendLen -= sent;
+        }
+        if (sent == 0 || sent == SOCKET_ERROR) break;
+    }
+}
+
+void recvPartScreenshot(SOCKET s, const char* pdata, SOCKADDR_IN from) {
+    /*
+
+    */
+
+    int packLen = DATA_BUFSIZE * 5;
+    int index = 0;
+    
+    recvallUDP(s, (char*)&index, sizeof(int), from);
+    recvallUDP(s, pdata + index * packLen, sizeof(packLen), from);
+}
+
 // Function that receive data
 // from client
 DWORD WINAPI serverReceive(LPVOID lpParam)
 {
-    // Created buffer[] to
-    // receive message
-    //char buffer[sizeof(int)] = { 0 };
+    /* 
+    Function that receive data from client
+    */
+
+    // buffer to save command
     int command;
 
     // Created client socket
-
     SOCKET client = *(SOCKET*)lpParam;
 
     // Server executes continuously
@@ -346,9 +390,7 @@ DWORD WINAPI serverReceive(LPVOID lpParam)
             return -1;
         }
 
-        // char to int
-        //sscanf_s(buffer, "%d", &command);
-
+        // execute command (exit = 0, register mouse press = 1, register key press = 2)
         switch (command)
         {
         case EXIT:
@@ -364,21 +406,6 @@ DWORD WINAPI serverReceive(LPVOID lpParam)
             break;
         }
 
-        // If Client exits
-        if (strcmp(buffer, "exit") == 0) {
-            cout << "Client Disconnected."
-                << endl;
-            break;
-        }
-
-        // Print the message
-        // given by client that
-        // was stored in buffer
-        cout << "Client: " << buffer << endl;
-        //MessageBox(NULL, LPWSTR(buffer), NULL, MB_ICONERROR);
-
-        // Clear buffer message
-        memset(buffer, 0, DATA_BUFSIZE);
     }
     return 1;
 }
