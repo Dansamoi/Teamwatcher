@@ -238,7 +238,7 @@ void recvallUDP(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN from) {
     int error;
     if (buflen < recvLen) {
         while (buflen > 0) {
-            recieved = recvfrom(s, (char*)pdata, recvLen, 0, (sockaddr*)&from, &sizeOfFrom);
+            recieved = recvfrom(s, (char*)pdata, buflen, 0, (sockaddr*)&from, &sizeOfFrom);
             if (recieved == -1) {
                 error = WSAGetLastError();
                 continue;
@@ -331,12 +331,13 @@ void sendallScreenshot(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN to) 
     int sendLen = DATA_BUFSIZE * 5 + sizeof(int);
     int error;
     ScreenPacketPixel.resize(sendLen);
-    char* pPacket = (char*)&ScreenPacketPixel;
+    char* pPacket = (char*)&ScreenPacketPixel.front();
 
     for (int i = 0; i < 1280*720*4/(DATA_BUFSIZE * 5); i++) {
+        pPacket = (char*)&ScreenPacketPixel.front();
         sendLen = DATA_BUFSIZE * 5 + sizeof(int);
-        memcpy(&ScreenPacketPixel, &i, sizeof(int));
-        memcpy(&ScreenPacketPixel + sizeof(int), pdata, sendLen - sizeof(int));
+        memcpy(pPacket, &i, sizeof(int));
+        memcpy(pPacket + sizeof(int), pdata + i* (sendLen - sizeof(int)), sendLen - sizeof(int));
 
         while (sendLen > 0) {
             sent = sendto(s, pPacket, sendLen, 0, (sockaddr*)&to, sizeof(to));
@@ -359,9 +360,17 @@ void recvPartScreenshot(SOCKET s, const char* pdata, SOCKADDR_IN from) {
 
     int packLen = DATA_BUFSIZE * 5;
     int index = 0;
+    int sendLen = DATA_BUFSIZE * 5 + sizeof(int);
+    ScreenPacketPixel.resize(sendLen);
+    char* pPacket = (char*)&ScreenPacketPixel.front();
+
+    recvallUDP(s, (char*)&ScreenPacketPixel.front(), sendLen, from);
+
+    memcpy(&index, pPacket, sizeof(int));
+    memcpy((void*)(pdata + index*packLen), pPacket + sizeof(int), sendLen - sizeof(int));
     
-    recvallUDP(s, (char*)&index, sizeof(int), from);
-    recvallUDP(s, pdata + index * packLen, sizeof(packLen), from);
+    //recvallUDP(s, (char*)&index, sizeof(int), from);
+    //recvallUDP(s, pdata + index * packLen, sizeof(packLen), from);
 }
 
 // Function that receive data
@@ -452,6 +461,7 @@ DWORD WINAPI serverSend(LPVOID lpParam)
     return 1;
 }
 
+
 DWORD WINAPI serverSendUDP(LPVOID lpParam)
 {
     // Created buffer[] to
@@ -492,6 +502,66 @@ DWORD WINAPI serverSendUDP(LPVOID lpParam)
 
         //sendallUDP(client, (char*)&sz, sizeof(sz), to);
         sendallUDP(client, (char*)&Pixels.front(), Pixels.size() * sizeof(Pixels.front()), to);
+        //delete[] bufferImage;
+        DeleteObject(screenshot);
+        Pixels.clear();
+        while (clock() - last_cycle < delay);
+        last_cycle = clock();
+
+        //waitKey(FRAME_INTERVAL);
+
+        // If server exit
+        //if (strcmp(buffer, "exit") == 0) {
+        //    cout << "Thank you for using the application"
+        //        << endl;
+        //    break;
+        //}
+    }
+    return 1;
+}
+
+DWORD WINAPI serverSendUDPNew(LPVOID lpParam)
+{
+    // Created buffer[] to
+    // receive message
+    //char buffer[1920 * 1080] = { 0 };
+
+    // Created client socket
+    SOCKET client = *(SOCKET*)lpParam;
+    //screenshot = Screen::ResizeImage(Screen::GetScreenShot(), 1920, 1080);
+    //bufferImage = Screen::GetPixelsFromHBITMAP(screenshot);
+    //int size = sizeof(bufferImage);
+    //sendall(client, (char*)&size, sizeof(int));
+    // Server executes continuously
+    double delay = 1 / 30 * CLOCKS_PER_SEC;
+    clock_t last_cycle = clock();
+    screenshot = Screen::GetScreenShot();
+    double now = (clock() - last_cycle) / (double)CLOCKS_PER_SEC;;
+    last_cycle = clock();
+    screenshot = Screen::ResizeImage(screenshot, 1280, 720);
+    now = (clock() - last_cycle) / (double)CLOCKS_PER_SEC;;
+    Screen::HBITMAPToPixels(screenshot, Pixels, 1280, 720, 32);
+    int sz = Pixels.size();
+    sendallUDP(client, (char*)&sz, sizeof(sz), to);
+    DeleteObject(screenshot);
+    while (true) {
+        //clock_t next_cycle = clock();
+        //double duration = (next_cycle - last_cycle) / (double)CLOCKS_PER_SEC;
+        //last_cycle = next_cycle;
+        screenshot = Screen::ResizeImage(Screen::GetScreenShot(), 1280, 720);
+        Screen::HBITMAPToPixels(screenshot, Pixels, 1280, 720, 32);
+        //bufferImage = Screen::GetPixelsFromHBITMAP(screenshot);
+        // Input message server
+        // wants to send to client
+
+        // If sending failed
+        // return -1
+        //int sz = Pixels.size();
+
+        //sendallUDP(client, (char*)&sz, sizeof(sz), to);
+        //sendallUDP(client, (char*)&Pixels.front(), Pixels.size() * sizeof(Pixels.front()), to);
+
+        sendallScreenshot(client, (char*)&Pixels.front(), Pixels.size() * sizeof(Pixels.front()), to);
         //delete[] bufferImage;
         DeleteObject(screenshot);
         Pixels.clear();
@@ -594,6 +664,58 @@ DWORD WINAPI clientReceiveUDP(LPVOID lpParam)
             DeleteObject(screenshot);
 
         screenshot = Screen::HBITMAPFromPixels(Pixels, 1280, 720, 32);
+
+        // If Server exits
+        //if (strcmp(buffer, "exit") == 0) {
+        //    cout << "Server disconnected."
+        //        << endl;
+        //    return 1;
+       // }
+
+        // Print the message
+        // given by server that
+        // was stored in buffer
+        //cout << "Server: " << buffer << endl;
+
+        // Clear buffer message
+        //memset(buffer, 0, sizeof(buffer));
+        //memset(bufferImage, 0, sizeof(bufferImage));
+    }
+    return 1;
+}
+
+DWORD WINAPI clientReceiveUDPNew(LPVOID lpParam)
+{
+    // Created buffer[] to
+    // receive message
+    //char buffer[1920 * 1080] = { 0 };
+    //BYTE bufferImage[1920 * 1080] = { 0 };
+
+    // Created server socket
+    SOCKET server = *(SOCKET*)lpParam;
+    int size = 0;
+    recvallUDP(server, (char*)&size, sizeof(size), from);
+    Pixels.resize(size);
+    // Client executes continuously
+    while (true) {
+
+        // If received buffer gives
+        // error then return -1
+        //DeleteObject(screenshot);
+        //Pixels.clear();
+        //if (recv(server, (char*)&Pixels.front(), size*sizeof(Pixels.front()), 0) == SOCKET_ERROR) {
+        //    cout << "recv function failed with error: "
+        //        << WSAGetLastError()
+        //        << endl;
+        //    //return -1;
+        //}
+        //recvallUDP(server, (char*)&Pixels.front(), size * sizeof(Pixels.front()), from);
+        recvPartScreenshot(server, (char*)&Pixels.front(), from);
+
+        //if (!Pixels.empty())
+            //DeleteObject(screenshot);
+
+        //screenshot = Screen::HBITMAPFromPixels(Pixels, 1280, 720, 32);
 
         // If Server exits
         //if (strcmp(buffer, "exit") == 0) {
@@ -844,7 +966,7 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
 
         serverSending = CreateThread(NULL,
             0,
-            serverSendUDP,
+            serverSendUDPNew,
             &sUDP,
             0,
             &tid);
@@ -919,7 +1041,7 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
 
         clientReceiving = CreateThread(NULL,
             0,
-            clientReceiveUDP,
+            clientReceiveUDPNew,
             &sUDP,
             0,
             &tid);
@@ -1316,6 +1438,8 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         //delete[] bufferImage;
         //SetBitmapBits(screenshot, sizeof(bufferImage), bufferImage);
         //if (screenshot != NULL)
+        if(Pixels.size() != 0)
+            screenshot = Screen::HBITMAPFromPixels(Pixels, 1280, 720, 32);
         Screen::DrawBitmap(hDC, 0, 0, rc.right, rc.bottom, screenshot, SRCCOPY);
         DeleteObject(screenshot);
         ReleaseDC(hwnd, hDC);
