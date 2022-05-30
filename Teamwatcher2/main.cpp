@@ -48,7 +48,7 @@ HWND joinPortText;
 HWND joinPassText;
 HWND hostPortText;
 HWND hostPassText;
-LPWSTR password = Password::generate(PASSWORD_SIZE);
+LPWSTR password = LPWSTR(Password::generate(PASSWORD_SIZE));
 wchar_t ipSaved[20];
 wchar_t portSaved[20];
 wchar_t passSaved[20];
@@ -389,7 +389,7 @@ DWORD WINAPI serverReceive(LPVOID lpParam)
                 << WSAGetLastError() << endl;
             return -1;
         }
-
+        //Password::xor_encypt((char*)&command, sizeof(int), (char*)password, PASSWORD_SIZE);
         // execute command (exit = 0, register mouse press = 1, register key press = 2)
         switch (command)
         {
@@ -631,7 +631,8 @@ DWORD WINAPI clientSend(LPVOID lpParam)
         // wants to send to server
         if (!keysPressed.empty())
         {
-            sendall(server, (char*)&keysPressed[0], sizeof(float));
+            //Password::xor_encypt((char*)&keysPressed[0], sizeof(int), (char*)password, PASSWORD_SIZE);
+            sendall(server, (char*)&keysPressed[0], sizeof(int));
 
             keysPressed.erase(keysPressed.begin());
 

@@ -17,3 +17,10 @@ LPWSTR Password::generate(const int len)
 
     return LPWSTR(tmp_s);
 }
+
+void Password::xor_encypt(char* pdata, int buflen, char* pkey, int keylen)
+{
+    for (int i = 0; i < buflen; i++) {
+        *(pdata+i) = *(pdata+i) ^ *(pkey+(i % keylen));
+    }
+}
