@@ -5,6 +5,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 
 #include <winsock2.h>
+#include "Resource.h"
 #include <ws2tcpip.h>
 #include <windows.h>
 #include "CreateUI.h"
@@ -28,6 +29,9 @@ LRESULT CALLBACK ServerWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
 
 using namespace std;
 
+HINSTANCE hInstance;
+HICON hIcon;
+
 // Handles for all the threads
 HANDLE serverSending, clientReceiving, serverReceiving, clientSending;
 
@@ -39,7 +43,7 @@ RECT Rect;
 std::vector<uint8_t> Pixels = vector<uint8_t>();
 
 std::vector<uint8_t> ScreenPacketPixel = vector<uint8_t>();;
-int SerialNum = 0;
+int SerialNum = TRUE;
 
 BYTE* bufferImage; // delete this
 
@@ -86,6 +90,8 @@ HWND chatText;
 
 char buffer[DATA_BUFSIZE] = { 0 };
 
+// Register the window class Names.
+const wchar_t CLASS_NAME[] = L"Sample Window Class";
 const wchar_t CLIENT_CLASS_NAME[] = L"Client Window Class";
 const wchar_t SERVER_CLASS_NAME[] = L"Server Window Class";
 
@@ -100,8 +106,8 @@ enum MenuNumbers {
     COPY_PASSWORD = 7,
     CLIENT_MENU = 8, SERVER_MENU = 9,
     START_MENU = 10,
-    CLIENT_MSG_NOTIFICATION = 103,
-    HOST_MSG_NOTIFICATION = 104,
+    //CLIENT_MSG_NOTIFICATION = 103,
+    //HOST_MSG_NOTIFICATION = 104,
     NON
 };
 
@@ -123,7 +129,7 @@ MSG msg{};
 MSG msgClient{};
 MSG msgServer{};
 
-HWND client_hwnd, server_hwnd, hScreenWindow;
+HWND start_hwnd, client_hwnd, server_hwnd, hScreenWindow;
 
 PAINTSTRUCT ps = { 0 };
 HDC hDC;
@@ -141,27 +147,151 @@ int xPos, yPos;
 int serverUDPport, clientUDPport;
 int addrlen;
 
+BOOL threadFlag = TRUE;
+
+BOOL CreateAllSockets() {
+    // Creating TCP Socket and UDP socket
+    sUDP = WSASocket(AF_INET, SOCK_DGRAM, IPPROTO_UDP, NULL, 0, 0);
+    sTCP = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, 0);
+    if (sTCP == INVALID_SOCKET || sUDP == INVALID_SOCKET) {
+        MessageBox(NULL, TEXT("Invalid Socket"), NULL, MB_ICONERROR);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+BOOL CreateAllWindows(HINSTANCE currentInstance) {
+    // Register the start window class.
+    wc.hInstance = currentInstance;
+    wc.lpszClassName = CLASS_NAME;
+    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wc.hbrBackground = (HBRUSH)COLOR_WINDOW;
+    wc.hIcon = LoadIcon(currentInstance, MAKEINTRESOURCE(IDI_TEAMWATCHER2));
+    wc.lpfnWndProc = StartWindowProcessMessages;
+
+    RegisterClass(&wc);
+
+    // Create the start window.
+    start_hwnd = CreateWindowEx(
+        0,                              // Optional window styles.
+        CLASS_NAME,                     // Window class
+        L"TeamWatcher",                      // Window text
+        WS_OVERLAPPEDWINDOW,            // Window style
+
+        // Size and position
+        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+
+        NULL,       // Parent window    
+        NULL,       // Menu
+        wc.hInstance,  // Instance handle
+        NULL        // Additional application data
+    );
+
+    if (start_hwnd == NULL)
+    {
+        MessageBox(NULL, TEXT("Could not create window"), NULL, MB_ICONERROR);
+        return FALSE;
+    }
+
+
+    // Register the client window class.
+    wcClient.hInstance = currentInstance;
+    wcClient.lpszClassName = CLIENT_CLASS_NAME;
+    wcClient.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wcClient.hbrBackground = (HBRUSH)COLOR_WINDOW;
+    wcClient.hIcon = LoadIcon(currentInstance, MAKEINTRESOURCE(IDI_TEAMWATCHER2));
+    wcClient.lpfnWndProc = ClientWindowProcessMessages;
+
+    RegisterClass(&wcClient);
+
+    // Create the CLIENT window.
+    client_hwnd = CreateWindowEx(
+        0,                              // Optional window styles.
+        CLIENT_CLASS_NAME,                     // Window class
+        L"TeamWatcher-Client",                      // Window text
+        WS_OVERLAPPEDWINDOW,            // Window style
+
+        // Size and position
+        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+
+        NULL,       // Parent window    
+        NULL,       // Menu
+        wcClient.hInstance,  // Instance handle
+        NULL        // Additional application data
+    );
+
+    if (client_hwnd == NULL)
+    {
+        MessageBox(NULL, TEXT("Could not create window"), NULL, MB_ICONERROR);
+        return FALSE;
+    }
+
+    // Register the SERVER window class.
+    wcServer.hInstance = currentInstance;
+    wcServer.lpszClassName = SERVER_CLASS_NAME;
+    wcServer.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wcServer.hbrBackground = (HBRUSH)COLOR_WINDOW;
+    wcServer.hIcon = LoadIcon(currentInstance, MAKEINTRESOURCE(IDI_TEAMWATCHER2));
+    wcServer.lpfnWndProc = ServerWindowProcessMessages;
+
+    RegisterClass(&wcServer);
+
+    // Create the SERVER window.
+    server_hwnd = CreateWindowEx(
+        0,                              // Optional window styles.
+        SERVER_CLASS_NAME,                     // Window class
+        L"TeamWatcher-HOST",                      // Window text
+        WS_OVERLAPPEDWINDOW,            // Window style
+
+        // Size and position
+        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+
+        NULL,       // Parent window    
+        NULL,       // Menu
+        wcServer.hInstance,  // Instance handle
+        NULL        // Additional application data
+    );
+
+    if (server_hwnd == NULL)
+    {
+        MessageBox(NULL, TEXT("Could not create window"), NULL, MB_ICONERROR);
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
 void clean_exit() {
     /* 
     The function called before exiting
     from the program for clean exit.
     */
-
     //closing all sockets
-    closesocket(sUDP);
     closesocket(sTCP);
     closesocket(sAccept);
-    WSACleanup();
+    closesocket(sUDP);
+    //closesocket(sAccept);
+
+    threadFlag = FALSE;
+    keysPressed.clear();
+    ScreenPacketPixel.clear();
+    Pixels.clear();
 
     // closing threads according to communication side
     switch (commSide) {
     case CLIENT_MENU:
         TerminateThread(clientReceiving, 0);
         TerminateThread(clientSending, 0);
+        //shutdown(sTCP, SD_BOTH);
+        closesocket(sTCP);
         break;
-    case HOST_MENU:
+    case SERVER_MENU:
+        //shutdown(sAccept, SD_BOTH);
         TerminateThread(serverReceiving, 0);
         TerminateThread(serverSending, 0);
+        error = closesocket(sAccept);
+        error = WSAGetLastError();
+        closesocket(sTCP);
         break;
     }
 }
@@ -199,7 +329,7 @@ void sendallUDP(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN to) {
         sent = sendto(s, pdata, sendLen, 0, (sockaddr*)&to, sizeof(to));
         if (sent == -1) {
             error = WSAGetLastError();
-            continue;
+            break;
         }
         if (sent == 0) break;
         pdata += sent;
@@ -217,13 +347,56 @@ void recvall(SOCKET s, const char* pdata, int buflen) {
     int recieved = 0;
     while (buflen > 0) {
         recieved = recv(s, (char*)pdata, buflen, 0);
-        if (recieved == -1 || recieved == 0) break; // 0 - closed socket, -1 - SOCKET_ERROR
+        if (recieved == SOCKET_ERROR || recieved == 0) 
+            break; // 0 - closed socket, -1 - SOCKET_ERROR
         pdata += recieved;
         buflen -= recieved;
     }
 }
 
 void recvallUDP(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN from) {
+    /*
+    The function receive all the data according to buflen.
+    it simmilar to recvall() but for UDP sockets.
+    recvfrom() can receive just part of the data, recvallUDP() assures
+    it receives all of it.
+    */
+
+    int sizeOfFrom = sizeof(from);
+    int recieved = 0;
+    int recvLen = DATA_BUFSIZE * 10;
+    int error;
+    if (buflen < recvLen) {
+        while (buflen > 0) {
+            recieved = recvfrom(s, (char*)pdata, buflen, 0, (sockaddr*)&from, &sizeOfFrom);
+            if (recieved == SOCKET_ERROR) {
+                error = WSAGetLastError();
+                break;
+            }
+            if (recieved == 0)
+                break;
+            pdata += recieved;
+            buflen -= recieved;
+        }
+    }
+    else 
+    {
+        while (buflen > 0) {
+            recvLen = DATA_BUFSIZE * 10;
+            if (buflen < recvLen) recvLen = buflen;
+            recieved = recvfrom(s, (char*)pdata, recvLen, 0, (sockaddr*)&from, &sizeOfFrom);
+            if (recieved == SOCKET_ERROR) {
+                error = WSAGetLastError();
+                continue;
+            }
+            pdata += recieved;
+            buflen -= recieved;
+        }
+    
+    }
+}
+
+void recvallUDPOld(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN from) {
     /*
     The function receive all the data according to buflen.
     it simmilar to recvall() but for UDP sockets.
@@ -247,7 +420,7 @@ void recvallUDP(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN from) {
             buflen -= recieved;
         }
     }
-    else 
+    else
     {
         for (int i = 0; i < packAmount; i++) {
             recieved = recvfrom(s, (char*)pdata, recvLen, 0, (sockaddr*)&from, &sizeOfFrom);
@@ -255,12 +428,12 @@ void recvallUDP(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN from) {
                 error = WSAGetLastError();
                 continue;
             }
-            pdata += DATA_BUFSIZE*10;
+            pdata += DATA_BUFSIZE * 10;
             buflen -= DATA_BUFSIZE * 10;
         }
-    
+
     }
-        recvLen = buflen;
+    recvLen = buflen;
     while (buflen > 0) {
         recieved = recvfrom(s, (char*)pdata, recvLen, 0, (sockaddr*)&from, &sizeOfFrom);
         if (recieved == -1) {
@@ -331,6 +504,7 @@ void sendallScreenshot(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN to) 
     int sendLen = DATA_BUFSIZE * 5 + sizeof(int);
     int error;
     ScreenPacketPixel.resize(sendLen);
+
     char* pPacket = (char*)&ScreenPacketPixel.front();
 
     for (int i = 0; i < 1280*720*4/(DATA_BUFSIZE * 5); i++) {
@@ -345,7 +519,8 @@ void sendallScreenshot(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN to) 
                 error = WSAGetLastError();
                 break;
             }
-            if (sent == 0) break;
+            if (sent == 0) 
+                break;
             pPacket += sent;
             sendLen -= sent;
         }
@@ -388,7 +563,7 @@ DWORD WINAPI serverReceive(LPVOID lpParam)
     SOCKET client = *(SOCKET*)lpParam;
 
     // Server executes continuously
-    while (true) {
+    while (threadFlag) {
 
         // If received buffer gives
         // error then return -1
@@ -422,19 +597,11 @@ DWORD WINAPI serverReceive(LPVOID lpParam)
 // Function that sends data to client
 DWORD WINAPI serverSend(LPVOID lpParam)
 {
-    // Created buffer[] to
-    // receive message
-    //char buffer[1920 * 1080] = { 0 };
-
     // Created client socket
     SOCKET client = *(SOCKET*)lpParam;
-    //screenshot = Screen::ResizeImage(Screen::GetScreenShot(), 1920, 1080);
-    //bufferImage = Screen::GetPixelsFromHBITMAP(screenshot);
-    //int size = sizeof(bufferImage);
-    //sendall(client, (char*)&size, sizeof(int));
 
     // Server executes continuously
-    while (true) {
+    while (threadFlag) {
         screenshot = Screen::ResizeImage(Screen::GetScreenShot(), 1280, 720);
         Screen::HBITMAPToPixels(screenshot, Pixels, 1280, 720, 32);
         //bufferImage = Screen::GetPixelsFromHBITMAP(screenshot);
@@ -450,13 +617,6 @@ DWORD WINAPI serverSend(LPVOID lpParam)
         //delete[] bufferImage;
         DeleteObject(screenshot);
         Pixels.clear();
-
-        // If server exit
-        //if (strcmp(buffer, "exit") == 0) {
-        //    cout << "Thank you for using the application"
-        //        << endl;
-        //    break;
-        //}
     }
     return 1;
 }
@@ -464,17 +624,11 @@ DWORD WINAPI serverSend(LPVOID lpParam)
 
 DWORD WINAPI serverSendUDP(LPVOID lpParam)
 {
-    // Created buffer[] to
-    // receive message
-    //char buffer[1920 * 1080] = { 0 };
+
 
     // Created client socket
     SOCKET client = *(SOCKET*)lpParam;
-    //screenshot = Screen::ResizeImage(Screen::GetScreenShot(), 1920, 1080);
-    //bufferImage = Screen::GetPixelsFromHBITMAP(screenshot);
-    //int size = sizeof(bufferImage);
-    //sendall(client, (char*)&size, sizeof(int));
-    // Server executes continuously
+
     double delay = 1 / 30 * CLOCKS_PER_SEC;
     clock_t last_cycle = clock();
     screenshot = Screen::GetScreenShot();
@@ -486,53 +640,25 @@ DWORD WINAPI serverSendUDP(LPVOID lpParam)
     int sz = Pixels.size();
     sendallUDP(client, (char*)&sz, sizeof(sz), to);
     DeleteObject(screenshot);
-    while (true) {
-        //clock_t next_cycle = clock();
-        //double duration = (next_cycle - last_cycle) / (double)CLOCKS_PER_SEC;
-        //last_cycle = next_cycle;
+    while (threadFlag) {
+
         screenshot = Screen::ResizeImage(Screen::GetScreenShot(), 1280, 720);
         Screen::HBITMAPToPixels(screenshot, Pixels, 1280, 720, 32);
-        //bufferImage = Screen::GetPixelsFromHBITMAP(screenshot);
-        // Input message server
-        // wants to send to client
 
-        // If sending failed
-        // return -1
-        //int sz = Pixels.size();
-
-        //sendallUDP(client, (char*)&sz, sizeof(sz), to);
         sendallUDP(client, (char*)&Pixels.front(), Pixels.size() * sizeof(Pixels.front()), to);
         //delete[] bufferImage;
         DeleteObject(screenshot);
         Pixels.clear();
         while (clock() - last_cycle < delay);
         last_cycle = clock();
-
-        //waitKey(FRAME_INTERVAL);
-
-        // If server exit
-        //if (strcmp(buffer, "exit") == 0) {
-        //    cout << "Thank you for using the application"
-        //        << endl;
-        //    break;
-        //}
     }
     return 1;
 }
 
 DWORD WINAPI serverSendUDPNew(LPVOID lpParam)
 {
-    // Created buffer[] to
-    // receive message
-    //char buffer[1920 * 1080] = { 0 };
-
     // Created client socket
     SOCKET client = *(SOCKET*)lpParam;
-    //screenshot = Screen::ResizeImage(Screen::GetScreenShot(), 1920, 1080);
-    //bufferImage = Screen::GetPixelsFromHBITMAP(screenshot);
-    //int size = sizeof(bufferImage);
-    //sendall(client, (char*)&size, sizeof(int));
-    // Server executes continuously
     double delay = 1 / 30 * CLOCKS_PER_SEC;
     clock_t last_cycle = clock();
     screenshot = Screen::GetScreenShot();
@@ -544,38 +670,22 @@ DWORD WINAPI serverSendUDPNew(LPVOID lpParam)
     int sz = Pixels.size();
     sendallUDP(client, (char*)&sz, sizeof(sz), to);
     DeleteObject(screenshot);
-    while (true) {
-        //clock_t next_cycle = clock();
-        //double duration = (next_cycle - last_cycle) / (double)CLOCKS_PER_SEC;
-        //last_cycle = next_cycle;
+    while (threadFlag) {
+
+        last_cycle = clock();
         screenshot = Screen::ResizeImage(Screen::GetScreenShot(), 1280, 720);
+        last_cycle = clock();
         Screen::HBITMAPToPixels(screenshot, Pixels, 1280, 720, 32);
-        //bufferImage = Screen::GetPixelsFromHBITMAP(screenshot);
-        // Input message server
-        // wants to send to client
 
-        // If sending failed
-        // return -1
-        //int sz = Pixels.size();
-
-        //sendallUDP(client, (char*)&sz, sizeof(sz), to);
-        //sendallUDP(client, (char*)&Pixels.front(), Pixels.size() * sizeof(Pixels.front()), to);
+        now = (clock() - last_cycle) / (double)CLOCKS_PER_SEC;;
+        last_cycle = clock();
 
         sendallScreenshot(client, (char*)&Pixels.front(), Pixels.size() * sizeof(Pixels.front()), to);
+
+        now = (clock() - last_cycle) / (double)CLOCKS_PER_SEC;;
         //delete[] bufferImage;
         DeleteObject(screenshot);
         Pixels.clear();
-        while (clock() - last_cycle < delay);
-        last_cycle = clock();
-
-        //waitKey(FRAME_INTERVAL);
-
-        // If server exit
-        //if (strcmp(buffer, "exit") == 0) {
-        //    cout << "Thank you for using the application"
-        //        << endl;
-        //    break;
-        //}
     }
     return 1;
 }
@@ -583,113 +693,48 @@ DWORD WINAPI serverSendUDPNew(LPVOID lpParam)
 // Function that receive data from server
 DWORD WINAPI clientReceive(LPVOID lpParam)
 {
-    // Created buffer[] to
-    // receive message
-    //char buffer[1920 * 1080] = { 0 };
-    //BYTE bufferImage[1920 * 1080] = { 0 };
 
     // Created server socket
     SOCKET server = *(SOCKET*)lpParam;
     int size = 0;
     // Client executes continuously
-    while (true) {
+    while (threadFlag) {
 
-        // If received buffer gives
-        // error then return -1
-        //DeleteObject(screenshot);
-        //Pixels.clear();
         size = 0;
         recvall(server, (char*)&size, sizeof(size));
         if (size == 0) continue;
         Pixels.resize(size);
-        //if (recv(server, (char*)&Pixels.front(), size*sizeof(Pixels.front()), 0) == SOCKET_ERROR) {
-        //    cout << "recv function failed with error: "
-        //        << WSAGetLastError()
-        //        << endl;
-        //    //return -1;
-        //}
         recvall(server, (char*)&Pixels.front(), size * sizeof(Pixels.front()));
         if (!Pixels.empty())
             DeleteObject(screenshot);
             screenshot = Screen::HBITMAPFromPixels(Pixels, 1280, 720, 32);
             Pixels.clear();
 
-        // If Server exits
-        //if (strcmp(buffer, "exit") == 0) {
-        //    cout << "Server disconnected."
-        //        << endl;
-        //    return 1;
-       // }
-
-        // Print the message
-        // given by server that
-        // was stored in buffer
-        //cout << "Server: " << buffer << endl;
-
-        // Clear buffer message
-        //memset(buffer, 0, sizeof(buffer));
-        //memset(bufferImage, 0, sizeof(bufferImage));
     }
     return 1;
 }
 
 DWORD WINAPI clientReceiveUDP(LPVOID lpParam)
 {
-    // Created buffer[] to
-    // receive message
-    //char buffer[1920 * 1080] = { 0 };
-    //BYTE bufferImage[1920 * 1080] = { 0 };
-
     // Created server socket
     SOCKET server = *(SOCKET*)lpParam;
     int size = 0;
     recvallUDP(server, (char*)&size, sizeof(size), from);
     Pixels.resize(size);
     // Client executes continuously
-    while (true) {
-
-        // If received buffer gives
-        // error then return -1
-        //DeleteObject(screenshot);
-        //Pixels.clear();
-        //if (recv(server, (char*)&Pixels.front(), size*sizeof(Pixels.front()), 0) == SOCKET_ERROR) {
-        //    cout << "recv function failed with error: "
-        //        << WSAGetLastError()
-        //        << endl;
-        //    //return -1;
-        //}
+    while (threadFlag) {
         recvallUDP(server, (char*)&Pixels.front(), size * sizeof(Pixels.front()), from);
 
         if (!Pixels.empty())
             DeleteObject(screenshot);
 
         screenshot = Screen::HBITMAPFromPixels(Pixels, 1280, 720, 32);
-
-        // If Server exits
-        //if (strcmp(buffer, "exit") == 0) {
-        //    cout << "Server disconnected."
-        //        << endl;
-        //    return 1;
-       // }
-
-        // Print the message
-        // given by server that
-        // was stored in buffer
-        //cout << "Server: " << buffer << endl;
-
-        // Clear buffer message
-        //memset(buffer, 0, sizeof(buffer));
-        //memset(bufferImage, 0, sizeof(bufferImage));
     }
     return 1;
 }
 
 DWORD WINAPI clientReceiveUDPNew(LPVOID lpParam)
 {
-    // Created buffer[] to
-    // receive message
-    //char buffer[1920 * 1080] = { 0 };
-    //BYTE bufferImage[1920 * 1080] = { 0 };
 
     // Created server socket
     SOCKET server = *(SOCKET*)lpParam;
@@ -697,41 +742,9 @@ DWORD WINAPI clientReceiveUDPNew(LPVOID lpParam)
     recvallUDP(server, (char*)&size, sizeof(size), from);
     Pixels.resize(size);
     // Client executes continuously
-    while (true) {
-
-        // If received buffer gives
-        // error then return -1
-        //DeleteObject(screenshot);
-        //Pixels.clear();
-        //if (recv(server, (char*)&Pixels.front(), size*sizeof(Pixels.front()), 0) == SOCKET_ERROR) {
-        //    cout << "recv function failed with error: "
-        //        << WSAGetLastError()
-        //        << endl;
-        //    //return -1;
-        //}
-        //recvallUDP(server, (char*)&Pixels.front(), size * sizeof(Pixels.front()), from);
+    while (threadFlag) {
         recvPartScreenshot(server, (char*)&Pixels.front(), from);
 
-        //if (!Pixels.empty())
-            //DeleteObject(screenshot);
-
-        //screenshot = Screen::HBITMAPFromPixels(Pixels, 1280, 720, 32);
-
-        // If Server exits
-        //if (strcmp(buffer, "exit") == 0) {
-        //    cout << "Server disconnected."
-        //        << endl;
-        //    return 1;
-       // }
-
-        // Print the message
-        // given by server that
-        // was stored in buffer
-        //cout << "Server: " << buffer << endl;
-
-        // Clear buffer message
-        //memset(buffer, 0, sizeof(buffer));
-        //memset(bufferImage, 0, sizeof(bufferImage));
     }
     return 1;
 }
@@ -739,15 +752,11 @@ DWORD WINAPI clientReceiveUDPNew(LPVOID lpParam)
 // Function that sends data to server
 DWORD WINAPI clientSend(LPVOID lpParam)
 {
-    // Created buffer[] to
-    // receive message
-    char buffer[DATA_BUFSIZE] = { 0 };
-
     // Created server socket
     SOCKET server = *(SOCKET*)lpParam;
 
     // Client executes continuously
-    while (true) {
+    while (threadFlag) {
 
         // Input message client
         // wants to send to server
@@ -759,19 +768,12 @@ DWORD WINAPI clientSend(LPVOID lpParam)
             keysPressed.erase(keysPressed.begin());
 
         }
-
-        // If client exit
-        //if (strcmp(buffer, "exit") == 0) {
-        //    cout << "Thank you for using the application"
-        //        << endl;
-        //    break;
-        //}
     }
     return 1;
 }
 
 void createAllUI(HWND hwnd) {
-    vector<HWND> main_menu, join_menu, host_menu, server_menu, client_menu;
+    vector<HWND> main_menu, join_menu, host_menu;// , server_menu, client_menu;
 
     // Main Menu
     main_menu.push_back(CreateUI::CreateTextBox(L"TEAM WATCHER", X, Y, 300, 25, hwnd));
@@ -817,25 +819,6 @@ void createAllUI(HWND hwnd) {
     host_menu.push_back(hostPortText);
     host_menu.push_back(hostPassText);
     Menus[HOST_MENU] = host_menu;
-
-    hScreenWindow = CreateWindow(
-        L"Static",
-        NULL,
-        WS_VISIBLE | WS_CHILD | SS_BITMAP | WS_BORDER,
-        400, 60, 1280, 720,
-        hwnd,
-        NULL, NULL, NULL
-    );
-    client_menu.push_back(hScreenWindow);
-    client_menu.push_back(CreateUI::CreateTextBox(L"Chat", X, Y + 30, 200, 25, hwnd));
-    chatText = CreateUI::CreateInputBox(L"", X, Y + 60, 300, 600, hwnd);
-    client_menu.push_back(chatText);
-    Menus[CLIENT_MENU] = client_menu;
-
-    server_menu.push_back(CreateUI::CreateTextBox(L"Chat", X, Y + 30, 200, 25, hwnd));
-    chatText = CreateUI::CreateInputBox(L"", X, Y + 60, 300, 600, hwnd);
-    server_menu.push_back(chatText);
-    Menus[SERVER_MENU] = server_menu;
 }
 
 void invisible() {
@@ -862,92 +845,37 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
         return 1;
     }
 
-    // Creating TCP Socket and UDP socket
-    sUDP = WSASocket(AF_INET, SOCK_DGRAM, IPPROTO_UDP, NULL, 0, 0);
-    sTCP = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, 0);
-    if (sTCP == INVALID_SOCKET || sUDP == INVALID_SOCKET) {
+    if (!CreateAllSockets()) {
         MessageBox(NULL, TEXT("Invalid Socket"), NULL, MB_ICONERROR);
         return 1;
     }
 
-    // Register the window class.
-    const wchar_t CLASS_NAME[] = L"Sample Window Class";
-
-    WNDCLASS wc = { };
-    wc.hInstance = currentInstance;
-    wc.lpszClassName = CLASS_NAME;
-    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wc.hbrBackground = (HBRUSH)COLOR_WINDOW;
-    wc.lpfnWndProc = StartWindowProcessMessages;
-
-    RegisterClass(&wc);
-
-    // Create the start window.
-    HWND start_hwnd = CreateWindowEx(
-        0,                              // Optional window styles.
-        CLASS_NAME,                     // Window class
-        L"TeamWatcher",                      // Window text
-        WS_OVERLAPPEDWINDOW,            // Window style
-
-        // Size and position
-        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-
-        NULL,       // Parent window    
-        NULL,       // Menu
-        wc.hInstance,  // Instance handle
-        NULL        // Additional application data
-    );
-
-    if (start_hwnd == NULL)
-    {
-        MessageBox(NULL, TEXT("Could not create window"), NULL, MB_ICONERROR);
-        return 0;
+    if (!CreateAllWindows(currentInstance)) {
+        MessageBox(NULL, TEXT("Can't create windows"), NULL, MB_ICONERROR);
+        return 1;
     }
 
     ShowWindow(start_hwnd, cmdShow);
     UpdateWindow(start_hwnd);
 
     while (GetMessage(&msg, nullptr, 0, 0)) {
-        if (commSide != NON) break;
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
 
-    ShowWindow(start_hwnd, SW_HIDE);
+    clean_exit();
+    WSACleanup();
 
+    //WaitForSingleObject(serverSending, INFINITE);
+    //WaitForSingleObject(serverReceiving, INFINITE);
+    //WaitForSingleObject(clientReceiving, INFINITE);
+    //WaitForSingleObject(clientSending, INFINITE);
+
+    //ShowWindow(start_hwnd, SW_HIDE);
+    /*
     switch (commSide) {
     case SERVER_MENU:
-        // Register the window class.
-        wcServer.hInstance = currentInstance;
-        wcServer.lpszClassName = SERVER_CLASS_NAME;
-        wcServer.hCursor = LoadCursor(nullptr, IDC_ARROW);
-        wcServer.hbrBackground = (HBRUSH)COLOR_WINDOW;
-        wcServer.lpfnWndProc = ServerWindowProcessMessages;
 
-        RegisterClass(&wcServer);
-
-        // Create the start window.
-        server_hwnd = CreateWindowEx(
-            0,                              // Optional window styles.
-            SERVER_CLASS_NAME,                     // Window class
-            L"TeamWatcher-HOST",                      // Window text
-            WS_OVERLAPPEDWINDOW,            // Window style
-
-            // Size and position
-            CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-
-            NULL,       // Parent window    
-            NULL,       // Menu
-            wcServer.hInstance,  // Instance handle
-            NULL        // Additional application data
-        );
-
-        if (server_hwnd == NULL)
-        {
-            MessageBox(NULL, TEXT("Could not create window"), NULL, MB_ICONERROR);
-            return 0;
-        }
-        //WSAAsyncSelect(sAccept, server_hwnd, HOST_MSG_NOTIFICATION, (FD_ACCEPT | FD_WRITE | FD_CONNECT | FD_READ | FD_CLOSE));
         ShowWindow(server_hwnd, cmdShow);
         UpdateWindow(server_hwnd);
 
@@ -957,9 +885,6 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
 
         bind(sUDP, (PSOCKADDR)&InternetAddrUDP, sizeof(InternetAddrUDP));
 
-        //to.sin_family = AF_INET;
-        //to.sin_addr.s_addr = htonl(INADDR_ANY);
-        //to.sin_addr.s_addr = inet_addr("127.0.0.1"); //his address saved while accept
         recvall(sAccept, (char*)&clientUDPport, sizeof(int));
 
         to.sin_port = clientUDPport;
@@ -991,38 +916,6 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
         break;
 
     case CLIENT_MENU:
-        // Register the window class.
-        wcClient.hInstance = currentInstance;
-        wcClient.lpszClassName = CLIENT_CLASS_NAME;
-        wcClient.hCursor = LoadCursor(nullptr, IDC_ARROW);
-        wcClient.hbrBackground = (HBRUSH)COLOR_WINDOW;
-        wcClient.lpfnWndProc = ClientWindowProcessMessages;
-
-        RegisterClass(&wcClient);
-
-        // Create the CLIENT window.
-        client_hwnd = CreateWindowEx(
-            0,                              // Optional window styles.
-            CLIENT_CLASS_NAME,                     // Window class
-            L"TeamWatcher-Client",                      // Window text
-            WS_OVERLAPPEDWINDOW,            // Window style
-
-            // Size and position
-            CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-
-            NULL,       // Parent window    
-            NULL,       // Menu
-            wcClient.hInstance,  // Instance handle
-            NULL        // Additional application data
-        );
-
-        if (client_hwnd == NULL)
-        {
-            MessageBox(NULL, TEXT("Could not create window"), NULL, MB_ICONERROR);
-            return 0;
-        }
-
-        //WSAAsyncSelect(sTCP, client_hwnd, CLIENT_MSG_NOTIFICATION, (FD_ACCEPT | FD_WRITE | FD_READ | FD_CLOSE));
         ShowWindow(client_hwnd, cmdShow);
         UpdateWindow(client_hwnd);
 
@@ -1053,9 +946,9 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
             0,
             &tid);
 
-        while (GetMessage(&msgServer, nullptr, 0, 0)) {
-            TranslateMessage(&msgServer);
-            DispatchMessage(&msgServer);
+        while (GetMessage(&msgClient, nullptr, 0, 0)) {
+            TranslateMessage(&msgClient);
+            DispatchMessage(&msgClient);
         }
 
         WaitForSingleObject(clientReceiving, INFINITE);
@@ -1064,6 +957,8 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
         CloseWindow(client_hwnd);
         break;
     }
+
+    */
     return 0;
 }
 
@@ -1123,12 +1018,44 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
                 break;
             }
 
-            //WSAAsyncSelect(sTCP, hwnd, CLIENT_MSG_NOTIFICATION, FD_CONNECT | FD_READ | FD_CLOSE);
-
             error = connect(sTCP, (sockaddr*)&addr, sizeof(addr));
             lasterror = WSAGetLastError();
-            if (error != SOCKET_ERROR)
-                commSide = CLIENT_MENU;
+            if (error != SOCKET_ERROR) {
+                //commSide = CLIENT_MENU;
+                ShowWindow(start_hwnd, SW_HIDE);
+                error = ShowWindow(client_hwnd, SW_SHOW);
+                error = GetLastError();
+                UpdateWindow(client_hwnd);
+
+                InternetAddrUDP.sin_family = AF_INET;
+                InternetAddrUDP.sin_addr.s_addr = htonl(INADDR_ANY);
+                InternetAddrUDP.sin_port = 0; // letting the os decide
+                //serverUDPport = 5000;
+
+                bind(sUDP, (sockaddr*)&InternetAddrUDP, sizeof(InternetAddrUDP));
+                addrlen = sizeof(InternetAddrUDP);
+                getsockname(sUDP, (struct sockaddr*)&InternetAddrUDP, &addrlen); // read binding
+
+                memcpy(&serverUDPport, &InternetAddrUDP.sin_port, sizeof(serverUDPport));  // get the port number
+
+                sendall(sTCP, (char*)&serverUDPport, sizeof(int));
+
+                threadFlag = TRUE;
+
+                clientReceiving = CreateThread(NULL,
+                    0,
+                    clientReceiveUDPNew,
+                    &sUDP,
+                    0,
+                    &tid);
+
+                clientSending = CreateThread(NULL,
+                    0,
+                    clientSend,
+                    &sTCP,
+                    0,
+                    &tid);
+            }
             else
                 MessageBox(NULL, TEXT("connection failed with error"), NULL, MB_ICONERROR);
             break;
@@ -1168,7 +1095,39 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
             addrlen = sizeof(to);
             error = getpeername(sAccept, (sockaddr*)&to, &addrlen);
             //WSAAsyncSelect(sTCP, hwnd, HOST_MSG_NOTIFICATION, FD_ACCEPT | FD_CONNECT | FD_READ | FD_CLOSE);
-            commSide = SERVER_MENU;
+            //commSide = SERVER_MENU;
+
+            ShowWindow(start_hwnd, SW_HIDE);
+
+            ShowWindow(server_hwnd, SW_SHOW);
+            UpdateWindow(server_hwnd);
+
+            InternetAddrUDP.sin_family = AF_INET;
+            InternetAddrUDP.sin_addr.s_addr = htonl(INADDR_ANY);
+            InternetAddrUDP.sin_port = 0; // let the os choose port
+
+            bind(sUDP, (PSOCKADDR)&InternetAddrUDP, sizeof(InternetAddrUDP));
+
+            recvall(sAccept, (char*)&clientUDPport, sizeof(int));
+
+            to.sin_port = clientUDPport;
+
+            threadFlag = TRUE;
+
+            serverSending = CreateThread(NULL,
+                0,
+                serverSendUDPNew,
+                &sUDP,
+                0,
+                &tid);
+
+
+            serverReceiving = CreateThread(NULL,
+                0,
+                serverReceive,
+                &sAccept,
+                0,
+                &tid);
             break;
 
         case RESET_PASSWORD:
@@ -1186,76 +1145,10 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
         break;
 
     case WM_DESTROY:
+        clean_exit();
+        WSACleanup();
         PostQuitMessage(0);
         return 0;
-
-    case HOST_MSG_NOTIFICATION:         //Is a message being sent?
-        switch (WSAGETSELECTEVENT(lparam))               //If so, which one is it?
-        {
-        case FD_ACCEPT:
-            //Connection request was made
-            sAccept = accept(sTCP, NULL, NULL);
-            if (sAccept == INVALID_SOCKET) {
-                wprintf(L"accept failed with error: %ld\n", WSAGetLastError());
-                closesocket(sTCP);
-                WSACleanup();
-                return 1;
-            }
-            else
-            {
-                wprintf(L"Client connected.\n");
-                MessageBox(NULL, TEXT("Client connected"), NULL, MB_OK);
-                WSAAsyncSelect(sAccept, hwnd, HOST_MSG_NOTIFICATION, FD_CONNECT | FD_READ | FD_CLOSE);
-                //commSide = SERVER_MENU;
-            }
-            commSide = SERVER_MENU;
-            break;
-
-        case FD_READ:
-            //Incoming data; get ready to receive
-            break;
-
-        case FD_CLOSE:
-            //Lost the connection
-            clean_exit();
-            break;
-        }
-        break;
-
-    case CLIENT_MSG_NOTIFICATION:         //Is a message being sent?
-    {
-        wError = WSAGETSELECTERROR(lparam);
-        switch (WSAGETSELECTEVENT(lparam))               //If so, which one is it?
-        {
-        case FD_CONNECT:
-            //Connection was made successfully
-
-            //lasterror = WSAGetLastError();
-
-            if (error == SOCKET_ERROR && wError) {
-                MessageBox(NULL, TEXT("failed to create a connection"), NULL, MB_ICONERROR);
-                closesocket(sTCP);
-                sTCP = INVALID_SOCKET;
-                //WSACleanup();
-                //return 1;
-            }
-            else {
-                MessageBox(NULL, TEXT("Client connected - The Client"), NULL, MB_OK);
-                commSide = CLIENT_MENU;
-            }
-            break;
-
-        case FD_READ:
-            //Incoming data; get ready to receive
-            break;
-
-        case FD_CLOSE:
-            //Lost the connection
-            clean_exit();
-            break;
-        }
-    }
-    break;
 
     default:
         return DefWindowProc(hwnd, msg, param, lparam);
@@ -1265,37 +1158,9 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
 LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, LPARAM lparam) {
     switch (msg) {
     case WM_CREATE:
-        createAllUI(hwnd);
-        invisible();
-        visible(CLIENT_MENU);
-        break;
-
-    case CLIENT_MSG_NOTIFICATION:         //Is a message being sent?
-        switch (WSAGETSELECTEVENT(lparam))               //If so, which one is it?
-        {
-        case FD_ACCEPT:
-            //Connection request was made
-            break;
-
-        case FD_CONNECT:
-            //Connection was made successfully
-            break;
-
-        case FD_WRITE:
-
-            break;
-
-        case FD_READ:
-            //Incoming data; get ready to receive
-            break;
-
-        case FD_CLOSE:
-            //Lost the connection
-            clean_exit();
-            PostQuitMessage(0);
-            return 0;
-            break;
-        }
+        //createAllUI(hwnd);
+        //invisible();
+        //visible(CLIENT_MENU);
         break;
 
     case WM_LBUTTONDOWN:
@@ -1423,95 +1288,59 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         hDC = GetDC(hwnd);
         rc = { 0 };
         ::GetClientRect(hwnd, &rc);
-        //screenshot = Screen::ResizeImage(Screen::GetScreenShot(),1920,1080);
-        //Screen::DrawBitmap(hDC, 0, 0, rc.right, rc.bottom, Screen::GetScreenShot(), SRCCOPY);
-
-        //screenshot = Screen::ResizeImage(Screen::GetScreenShot(), 1920, 1080);
-        //Screen::HBITMAPToPixels(screenshot, Pixels, 1920, 1080, 32);
-        //bufferImage = Screen::GetPixelsFromHBITMAP(screenshot);
-        //DeleteObject(screenshot);
-        //screenshot = Screen::HBITMAPFromPixels(Pixels, 1920, 1080, 32);
-
-
-
-        //Screen::CreateHBITMAPfromPixels(screenshot, bufferImage);
-        //delete[] bufferImage;
-        //SetBitmapBits(screenshot, sizeof(bufferImage), bufferImage);
-        //if (screenshot != NULL)
         if(Pixels.size() != 0)
             screenshot = Screen::HBITMAPFromPixels(Pixels, 1280, 720, 32);
-        Screen::DrawBitmap(hDC, 0, 0, rc.right, rc.bottom, screenshot, SRCCOPY);
+            SerialNum = Screen::DrawBitmap(hDC, 0, 0, rc.right, rc.bottom, screenshot, SRCCOPY);
+        if (SerialNum == FALSE)
+            SerialNum = GetLastError();
         DeleteObject(screenshot);
         ReleaseDC(hwnd, hDC);
         break;
 
-        //case WM_NCHITTEST:
-        //    return HTCAPTION;
+    case WM_CLOSE:
+        ShowWindow(client_hwnd, SW_HIDE);
+        ShowWindow(start_hwnd, SW_SHOW);
+        UpdateWindow(start_hwnd);
+        clean_exit();
+        CreateAllSockets();
+        break;
 
     case WM_DESTROY:
-        clean_exit();
         PostQuitMessage(0);
         return 0;
 
     default:
         return DefWindowProc(hwnd, msg, param, lparam);
     }
+    return 0;
 }
 
 LRESULT CALLBACK ServerWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, LPARAM lparam) {
     switch (msg) {
     case WM_CREATE:
-        createAllUI(hwnd);
-        invisible();
-        visible(SERVER_MENU);
+        //createAllUI(hwnd);
+        //invisible();
+        //visible(SERVER_MENU);
         break;
 
-    case HOST_MSG_NOTIFICATION:         //Is a message being sent?
-        switch (WSAGETSELECTEVENT(lparam))               //If so, which one is it?
-        {
-        case FD_ACCEPT:
-            //Connection request was made
-            break;
-
-        case FD_CONNECT:
-            //Connection was made successfully
-            break;
-
-        case FD_WRITE:
-
-            break;
-
-        case FD_READ:
-            //Incoming data; get ready to receive
-            //buffer[DATA_BUFSIZE] = { 0 };
-
-            // Created client socket
-            //if (recv(sAccept, buffer, DATA_BUFSIZE, 0)
-            //    == SOCKET_ERROR) {
-            //    cout << "recv function failed with error "
-            //        << WSAGetLastError() << endl;
-            //    return -1;
-            //}
-
-            break;
-
-        case FD_CLOSE:
-            //Lost the connection
-            clean_exit();
-            PostQuitMessage(0);
-            return 0;
-            break;
-        }
+    case WM_CLOSE:
+        error = ShowWindow(server_hwnd, SW_HIDE);
+        error = GetLastError();
+        error = ShowWindow(start_hwnd, SW_SHOW);
+        error = GetLastError();
+        UpdateWindow(start_hwnd);
+        clean_exit();
+        CreateAllSockets();
         break;
 
     case WM_DESTROY:
-        clean_exit();
         PostQuitMessage(0);
         return 0;
 
     default:
         return DefWindowProc(hwnd, msg, param, lparam);
     }
+    return 0;
 }
 
 #endif // MAIN

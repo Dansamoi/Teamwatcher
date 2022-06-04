@@ -137,7 +137,7 @@ public:
         if (0 == GetDIBits(hdc, hBitmap, 0, MyBMInfo.bmiHeader.biHeight, (LPVOID)lpPixels, &MyBMInfo, DIB_RGB_COLORS)) {
             //cout << "error2" << endl;
         }
-
+        DeleteDC(hdc);
         return lpPixels;
     }
 
@@ -159,7 +159,9 @@ public:
         Info.bmiHeader.biCompression = BI_RGB;
         Info.bmiHeader.biSizeImage = ((width * BitsPerPixel + 31) / 32) * 4 * height;
 
-        HBITMAP Result = CreateDIBitmap(GetDC(nullptr), &Info.bmiHeader, CBM_INIT, &Pixels[0], &Info, DIB_RGB_COLORS);
+        HDC hdc = GetDC(nullptr);
+        HBITMAP Result = CreateDIBitmap(hdc, &Info.bmiHeader, CBM_INIT, &Pixels[0], &Info, DIB_RGB_COLORS);
+        DeleteDC(hdc);
         return Result;
     }
 
