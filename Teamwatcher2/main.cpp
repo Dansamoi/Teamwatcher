@@ -230,10 +230,10 @@ BOOL CreateAllWindows(HINSTANCE currentInstance) {
         0,                              // Optional window styles.
         SERVER_CLASS_NAME,                     // Window class
         L"TeamWatcher-HOST",                      // Window text
-        WS_OVERLAPPEDWINDOW,            // Window style
+        WS_OVERLAPPED | WS_SYSMENU | WS_MINIMIZEBOX,            // Window style
 
         // Size and position
-        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+        CW_USEDEFAULT, CW_USEDEFAULT, 800, 450,
 
         NULL,       // Parent window    
         NULL,       // Menu
