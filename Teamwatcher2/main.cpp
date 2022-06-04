@@ -45,8 +45,6 @@ std::vector<uint8_t> Pixels = vector<uint8_t>();
 std::vector<uint8_t> ScreenPacketPixel = vector<uint8_t>();;
 int SerialNum = TRUE;
 
-BYTE* bufferImage; // delete this
-
 HWND ipText;
 HWND joinPortText;
 HWND joinPassText;
@@ -79,16 +77,9 @@ char* ip;
 int error, lasterror = 0;
 
 SOCKADDR_IN InternetAddr, InternetAddrUDP;
-ULONG NonBlock;
-DWORD Flags;
-DWORD SendBytes;
-DWORD RecvBytes;
 
 DWORD tid;
 
-HWND chatText;
-
-char buffer[DATA_BUFSIZE] = { 0 };
 
 // Register the window class Names.
 const wchar_t CLASS_NAME[] = L"Sample Window Class";
@@ -126,10 +117,8 @@ WNDCLASS wcClient = { };
 WNDCLASS wcServer = { };
 
 MSG msg{};
-MSG msgClient{};
-MSG msgServer{};
 
-HWND start_hwnd, client_hwnd, server_hwnd, hScreenWindow;
+HWND start_hwnd, client_hwnd, server_hwnd;
 
 PAINTSTRUCT ps = { 0 };
 HDC hDC;
@@ -176,10 +165,10 @@ BOOL CreateAllWindows(HINSTANCE currentInstance) {
         0,                              // Optional window styles.
         CLASS_NAME,                     // Window class
         L"TeamWatcher",                      // Window text
-        WS_OVERLAPPEDWINDOW,            // Window style
+        (WS_OVERLAPPEDWINDOW ^ WS_THICKFRAME) & ~WS_MAXIMIZEBOX, //WS_OVERLAPPEDWINDOW           // Window style
 
         // Size and position
-        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+        1280, 720, CW_USEDEFAULT, CW_USEDEFAULT,
 
         NULL,       // Parent window    
         NULL,       // Menu
@@ -775,10 +764,15 @@ DWORD WINAPI clientSend(LPVOID lpParam)
 void createAllUI(HWND hwnd) {
     vector<HWND> main_menu, join_menu, host_menu;// , server_menu, client_menu;
 
+    RECT clientRect = {};
+    GetClientRect(hwnd, &clientRect);
+    int width = clientRect.right - clientRect.left;
+    int height = clientRect.bottom - clientRect.top;
+
     // Main Menu
-    main_menu.push_back(CreateUI::CreateTextBox(L"TEAM WATCHER", X, Y, 300, 25, hwnd));
-    main_menu.push_back(CreateUI::CreateButton(L"JOIN", X, Y + 60, 65, 25, hwnd, JOIN_MENU));
-    main_menu.push_back(CreateUI::CreateButton(L"HOST", X + 80, Y + 60, 65, 25, hwnd, HOST_MENU));
+    main_menu.push_back(CreateUI::CreateTextBox(L"TEAM WATCHER", width/2 - 60, height/8, 120, 25, hwnd));
+    main_menu.push_back(CreateUI::CreateButton(L"JOIN", width / 2 - 80, height / 8 + 100, 65, 25, hwnd, JOIN_MENU));
+    main_menu.push_back(CreateUI::CreateButton(L"HOST", width / 2 + 15, height / 8 + 100, 65, 25, hwnd, HOST_MENU));
     Menus[MAIN_MENU] = main_menu;
 
     // Join Menu
@@ -866,99 +860,6 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
     clean_exit();
     WSACleanup();
 
-    //WaitForSingleObject(serverSending, INFINITE);
-    //WaitForSingleObject(serverReceiving, INFINITE);
-    //WaitForSingleObject(clientReceiving, INFINITE);
-    //WaitForSingleObject(clientSending, INFINITE);
-
-    //ShowWindow(start_hwnd, SW_HIDE);
-    /*
-    switch (commSide) {
-    case SERVER_MENU:
-
-        ShowWindow(server_hwnd, cmdShow);
-        UpdateWindow(server_hwnd);
-
-        InternetAddrUDP.sin_family = AF_INET;
-        InternetAddrUDP.sin_addr.s_addr = htonl(INADDR_ANY);
-        InternetAddrUDP.sin_port = 0; // let the os choose port
-
-        bind(sUDP, (PSOCKADDR)&InternetAddrUDP, sizeof(InternetAddrUDP));
-
-        recvall(sAccept, (char*)&clientUDPport, sizeof(int));
-
-        to.sin_port = clientUDPport;
-
-        serverSending = CreateThread(NULL,
-            0,
-            serverSendUDPNew,
-            &sUDP,
-            0,
-            &tid);
-
-
-        serverReceiving = CreateThread(NULL,
-            0,
-            serverReceive,
-            &sAccept,
-            0,
-            &tid);
-
-        while (GetMessage(&msgServer, nullptr, 0, 0)) {
-            TranslateMessage(&msgServer);
-            DispatchMessage(&msgServer);
-        }
-
-        WaitForSingleObject(serverSending, INFINITE);
-        WaitForSingleObject(serverReceiving, INFINITE);
-
-        CloseWindow(server_hwnd);
-        break;
-
-    case CLIENT_MENU:
-        ShowWindow(client_hwnd, cmdShow);
-        UpdateWindow(client_hwnd);
-
-        InternetAddrUDP.sin_family = AF_INET;
-        InternetAddrUDP.sin_addr.s_addr = htonl(INADDR_ANY);
-        InternetAddrUDP.sin_port = 0; // letting the os decide
-        //serverUDPport = 5000;
-
-        bind(sUDP, (sockaddr*)&InternetAddrUDP, sizeof(InternetAddrUDP));
-        addrlen = sizeof(InternetAddrUDP);
-        getsockname(sUDP, (struct sockaddr*)&InternetAddrUDP, &addrlen); // read binding
-
-        memcpy(&serverUDPport, &InternetAddrUDP.sin_port, sizeof(serverUDPport));  // get the port number
-
-        sendall(sTCP, (char*)&serverUDPport, sizeof(int));
-
-        clientReceiving = CreateThread(NULL,
-            0,
-            clientReceiveUDPNew,
-            &sUDP,
-            0,
-            &tid);
-
-        clientSending = CreateThread(NULL,
-            0,
-            clientSend,
-            &sTCP,
-            0,
-            &tid);
-
-        while (GetMessage(&msgClient, nullptr, 0, 0)) {
-            TranslateMessage(&msgClient);
-            DispatchMessage(&msgClient);
-        }
-
-        WaitForSingleObject(clientReceiving, INFINITE);
-        WaitForSingleObject(clientSending, INFINITE);
-
-        CloseWindow(client_hwnd);
-        break;
-    }
-
-    */
     return 0;
 }
 
