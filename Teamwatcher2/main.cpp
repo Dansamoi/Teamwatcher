@@ -165,10 +165,10 @@ BOOL CreateAllWindows(HINSTANCE currentInstance) {
         0,                              // Optional window styles.
         CLASS_NAME,                     // Window class
         L"TeamWatcher",                      // Window text
-        (WS_OVERLAPPEDWINDOW ^ WS_THICKFRAME) & ~WS_MAXIMIZEBOX, //WS_OVERLAPPEDWINDOW           // Window style
+        WS_OVERLAPPED | WS_SYSMENU | WS_MINIMIZEBOX, //WS_OVERLAPPEDWINDOW           // Window style
 
         // Size and position
-        1280, 720, CW_USEDEFAULT, CW_USEDEFAULT,
+        CW_USEDEFAULT, CW_USEDEFAULT, 800, 450,
 
         NULL,       // Parent window    
         NULL,       // Menu
@@ -770,20 +770,24 @@ void createAllUI(HWND hwnd) {
     int height = clientRect.bottom - clientRect.top;
 
     // Main Menu
-    main_menu.push_back(CreateUI::CreateTextBox(L"TEAM WATCHER", width/2 - 60, height/8, 120, 25, hwnd));
+    HWND text = CreateUI::CreateTextBox(L"TEAM WATCHER", width / 2 - 100, height / 8, 200, 30, hwnd);
+    HFONT hFontTitle = CreateFont(30, 0, 0, 0, FW_DEMIBOLD, FALSE, FALSE, FALSE, ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Tahoma");
+    SendMessage(text, WM_SETFONT, WPARAM(hFontTitle), TRUE);
+
+    main_menu.push_back(text);
     main_menu.push_back(CreateUI::CreateButton(L"JOIN", width / 2 - 80, height / 8 + 100, 65, 25, hwnd, JOIN_MENU));
     main_menu.push_back(CreateUI::CreateButton(L"HOST", width / 2 + 15, height / 8 + 100, 65, 25, hwnd, HOST_MENU));
     Menus[MAIN_MENU] = main_menu;
 
     // Join Menu
     join_menu.push_back(CreateUI::CreateButton(L"Back", X, Y, 65, 25, hwnd, MAIN_MENU));
-    join_menu.push_back(CreateUI::CreateTextBox(L"Enter Destination IP: ", X, Y + 30, 200, 25, hwnd));
-    join_menu.push_back(CreateUI::CreateTextBox(L"Enter Destination PORT: ", X, Y + 60, 200, 25, hwnd));
-    join_menu.push_back(CreateUI::CreateTextBox(L"Enter Password: ", X, Y + 90, 200, 25, hwnd));
-    join_menu.push_back(CreateUI::CreateButton(L"Connect", X, Y + 120, 65, 25, hwnd, CONNECTION));
-    ipText = CreateUI::CreateInputBox(L"", X + 180, Y + 30, 300, 20, hwnd);
-    joinPortText = CreateUI::CreateInputBox(L"", X + 180, Y + 60, 300, 20, hwnd);
-    joinPassText = CreateUI::CreateInputBox(L"", X + 180, Y + 90, 300, 20, hwnd);
+    join_menu.push_back(CreateUI::CreateTextBox(L"Enter Destination IP: ", X, Y + 50, 200, 25, hwnd));
+    join_menu.push_back(CreateUI::CreateTextBox(L"Enter Destination PORT: ", X, Y + 80, 200, 25, hwnd));
+    join_menu.push_back(CreateUI::CreateTextBox(L"Enter Password: ", X, Y + 110, 200, 25, hwnd));
+    join_menu.push_back(CreateUI::CreateButton(L"Connect", X, Y + 160, 65, 25, hwnd, CONNECTION));
+    ipText = CreateUI::CreateInputBox(L"", X + 180, Y + 50, 300, 20, hwnd);
+    joinPortText = CreateUI::CreateInputBox(L"", X + 180, Y + 80, 300, 20, hwnd);
+    joinPassText = CreateUI::CreateInputBox(L"", X + 180, Y + 110, 300, 20, hwnd);
     join_menu.push_back(ipText);
     join_menu.push_back(joinPortText);
     join_menu.push_back(joinPassText);
@@ -801,15 +805,15 @@ void createAllUI(HWND hwnd) {
     LPWSTR ptr = local;
 
     host_menu.push_back(CreateUI::CreateButton(L"Back", X, Y, 65, 25, hwnd, MAIN_MENU));
-    host_menu.push_back(CreateUI::CreateTextBox(L"Your IP is: ", X, Y + 30, 200, 25, hwnd));
-    host_menu.push_back(CreateUI::CreateTextBox(ptr, X + 180, Y + 30, 200, 25, hwnd));
-    host_menu.push_back(CreateUI::CreateTextBox(L"Enter PORT: ", X, Y + 60, 200, 25, hwnd));
-    host_menu.push_back(CreateUI::CreateTextBox(L"Your Password: ", X, Y + 90, 200, 25, hwnd));
-    host_menu.push_back(CreateUI::CreateButton(L"Reset", X + 340, Y + 90, 65, 25, hwnd, RESET_PASSWORD));
-    host_menu.push_back(CreateUI::CreateButton(L"Copy", X + 415, Y + 90, 65, 25, hwnd, COPY_PASSWORD));
-    host_menu.push_back(CreateUI::CreateButton(L"Create", X, Y + 120, 65, 25, hwnd, CREATION));
-    hostPortText = CreateUI::CreateInputBox(L"", X + 180, Y + 60, 300, 20, hwnd);
-    hostPassText = CreateUI::CreateTextBox(password, X + 180, Y + 90, 80, 25, hwnd);
+    host_menu.push_back(CreateUI::CreateTextBox(L"Your IP is: ", X, Y + 50, 200, 25, hwnd));
+    host_menu.push_back(CreateUI::CreateTextBox(ptr, X + 180, Y + 50, 200, 25, hwnd));
+    host_menu.push_back(CreateUI::CreateTextBox(L"Enter PORT: ", X, Y + 80, 200, 25, hwnd));
+    host_menu.push_back(CreateUI::CreateTextBox(L"Your Password: ", X, Y + 110, 200, 25, hwnd));
+    host_menu.push_back(CreateUI::CreateButton(L"Reset", X + 340, Y + 110, 65, 25, hwnd, RESET_PASSWORD));
+    host_menu.push_back(CreateUI::CreateButton(L"Copy", X + 415, Y + 110, 65, 25, hwnd, COPY_PASSWORD));
+    host_menu.push_back(CreateUI::CreateButton(L"Create", X, Y + 160, 65, 25, hwnd, CREATION));
+    hostPortText = CreateUI::CreateInputBox(L"", X + 180, Y + 80, 300, 20, hwnd);
+    hostPassText = CreateUI::CreateTextBox(password, X + 180, Y + 110, 80, 25, hwnd);
     host_menu.push_back(hostPortText);
     host_menu.push_back(hostPassText);
     Menus[HOST_MENU] = host_menu;
