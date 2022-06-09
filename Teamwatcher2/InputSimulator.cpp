@@ -16,12 +16,6 @@ void InputSimulator::SimulateMouseInput(int input, int x, int y)
 	Inputs[1].type = INPUT_MOUSE;
 	Inputs[1].mi.dwFlags = input;
 
-	//Inputs[1].type = INPUT_MOUSE;
-	//Inputs[1].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
-
-	//Inputs[2].type = INPUT_MOUSE;
-	//Inputs[2].mi.dwFlags = MOUSEEVENTF_LEFTUP;
-
 	SendInput(2, Inputs, sizeof(INPUT));
 }
 

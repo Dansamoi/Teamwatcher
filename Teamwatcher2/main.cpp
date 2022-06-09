@@ -22,35 +22,40 @@
 #include "InputSimulator.h"
 #pragma comment(lib,"WS2_32")
 
-// Message handling functions for all the windows
+// Declaring message handling functions for all the windows
 LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, LPARAM lparam); // for start window
 LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, LPARAM lparam); // for client window
 LRESULT CALLBACK ServerWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, LPARAM lparam); // for server window
 
+// for using vector and map
 using namespace std;
-
-HINSTANCE hInstance;
-HICON hIcon;
 
 // Handles for all the threads
 HANDLE serverSending, clientReceiving, serverReceiving, clientSending;
 
-int threadExitFlag = 1;
-
+// rect for saving client window info
 RECT Rect;
 
 // Vector for receive and send all the pixels of the image
 std::vector<uint8_t> Pixels = vector<uint8_t>();
 
+// Vector for receive and send part of the pixels of the image
 std::vector<uint8_t> ScreenPacketPixel = vector<uint8_t>();;
-int SerialNum = TRUE;
 
+// for checking if there is error with drawing on client screen
+int draw_error = TRUE;
+
+// Handles for the TextBoxes in the client and host windows
 HWND ipText;
 HWND joinPortText;
 HWND joinPassText;
 HWND hostPortText;
 HWND hostPassText;
+
+// generating password
 LPWSTR password = LPWSTR(Password::generate(PASSWORD_SIZE));
+
+// buffers for saving ip, port and password from the TextBoxes
 wchar_t ipSaved[20];
 wchar_t portSaved[20];
 wchar_t passSaved[20];
@@ -67,17 +72,22 @@ SOCKET sAccept;
 // SOCKADDR_IN struct to save information of client UDP socket for the server and server UDP socket for the client
 SOCKADDR_IN from, to;
 
+// for saving GetText results
 int gwstatIP = 0;
 int gwstatPort = 0;
 int gwstatPass = 0;
 
+// for saving ip and port data
 int port;
 char* ip;
 
+// for error handling
 int error, lasterror = 0;
 
+// for saving address information of connected sockets
 SOCKADDR_IN InternetAddr, InternetAddrUDP;
 
+// thread id
 DWORD tid;
 
 
@@ -86,6 +96,7 @@ const wchar_t CLASS_NAME[] = L"Sample Window Class";
 const wchar_t CLIENT_CLASS_NAME[] = L"Client Window Class";
 const wchar_t SERVER_CLASS_NAME[] = L"Server Window Class";
 
+// enum for saving all the different menues and messages
 enum MenuNumbers {
     BASE = 0,
     MAIN_MENU = 1,
@@ -97,51 +108,70 @@ enum MenuNumbers {
     COPY_PASSWORD = 7,
     CLIENT_MENU = 8, SERVER_MENU = 9,
     START_MENU = 10,
-    //CLIENT_MSG_NOTIFICATION = 103,
-    //HOST_MSG_NOTIFICATION = 104,
     NON
 };
 
+// enum of all the different control commands from client
 enum Codes {
     EXIT,
     MOUSE_PRESS,
     KEY_PRESS
 };
 
+// map for saving all HWND to buttons and other UI elements in every screen
 map<int, vector<HWND>> Menus;
 
+// int that saves the communication side
 int commSide = NON;
 
+// window classes of start window, class window and server window
 WNDCLASS wc = { };
 WNDCLASS wcClient = { };
 WNDCLASS wcServer = { };
 
+// MSG for getting the Asynchronous messages and handle them
 MSG msg{};
 
+// HWND of start window, client window and server window
 HWND start_hwnd, client_hwnd, server_hwnd;
 
+// structure for drawing the HBITMAP on the clients windows
 PAINTSTRUCT ps = { 0 };
+
+// handle to device context
 HDC hDC;
+
+// rect to save clients window info
 RECT rc = { 0 };
 
-int wError;
-
+// vector for saving all the keys pressed for the client
 vector<uint32_t> keysPressed;
 
+// HBITMAP to save the screen of the server to show in the client window
 HBITMAP screenshot = NULL;
 
+// saving the client command
 int command;
+// saving client's mouse coordinates
 int xPos, yPos;
 
+// for saving server and client UDP ports
 int serverUDPport, clientUDPport;
+
+// for saving the address length
 int addrlen;
 
+// flag for threads to continue or stop
 BOOL threadFlag = TRUE;
 
 BOOL CreateAllSockets() {
-    // Creating TCP Socket and UDP socket
+    // Function for creating the TCP and UDP sockets
+    // Creating UDP Socket
     sUDP = WSASocket(AF_INET, SOCK_DGRAM, IPPROTO_UDP, NULL, 0, 0);
+    // Creating TCP Socket
     sTCP = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, 0);
+
+    // Checking if created right
     if (sTCP == INVALID_SOCKET || sUDP == INVALID_SOCKET) {
         MessageBox(NULL, TEXT("Invalid Socket"), NULL, MB_ICONERROR);
         return FALSE;
@@ -150,6 +180,9 @@ BOOL CreateAllSockets() {
 }
 
 BOOL CreateAllWindows(HINSTANCE currentInstance) {
+    // Function to create all the windows
+
+    // Creating the start window
     // Register the start window class.
     wc.hInstance = currentInstance;
     wc.lpszClassName = CLASS_NAME;
@@ -182,7 +215,7 @@ BOOL CreateAllWindows(HINSTANCE currentInstance) {
         return FALSE;
     }
 
-
+    // Creating the client window
     // Register the client window class.
     wcClient.hInstance = currentInstance;
     wcClient.lpszClassName = CLIENT_CLASS_NAME;
@@ -215,6 +248,7 @@ BOOL CreateAllWindows(HINSTANCE currentInstance) {
         return FALSE;
     }
 
+    // Creating the Server window
     // Register the SERVER window class.
     wcServer.hInstance = currentInstance;
     wcServer.lpszClassName = SERVER_CLASS_NAME;
@@ -434,9 +468,6 @@ void recvallUDPOld(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN from) {
     }
 }
 
-//void sendScreen(SOCKET s);
-//void recieveScreen(SOCKET s);
-//void sendKeyPress(SOCKET s);
 void recieveKeyPress(SOCKET s) {
     /*
     The function receive all the Key Press Input data,
@@ -456,52 +487,68 @@ void recieveKeyPress(SOCKET s) {
     InputSimulator::SimulateKeyInput(code, up_down);
 }
 
-//void sendMousePress(SOCKET s);
+
 void recieveMousePress(SOCKET s) {
-    int xPos = 0;
-    int yPos = 0;
-    int w, h;
-    float xpos, ypos;
-    int code_up_down = 0;
+    /*
+    The function receive all the Mouse Key Press Input data,
+    and simulates the input on the computer.
+    */
 
+    int xPos = 0; // for x coordinate
+    int yPos = 0; // for y coordinate
+    int w, h; // for width and height
+    float xpos, ypos; // for real x, y coordinates (for new window)
+    int code_up_down = 0; // for up or down code
 
+    // recieve x position
     recvall(s, (char*)&xPos, sizeof(int));
+    // recieve y position
     recvall(s, (char*)&yPos, sizeof(int));
+    // recieve width
     recvall(s, (char*)&w, sizeof(int));
+    // recieve height
     recvall(s, (char*)&h, sizeof(int));
 
+    // calculating x and y positions
     xpos = (float)xPos / w;
     ypos = (float)yPos / h;
 
+    // recieve up or down key
     recvall(s, (char*)&code_up_down, sizeof(int));
 
-    xpos *= 65535; // */ GetSystemMetrics(SM_CXFULLSCREEN)
-    ypos *= 65535; // */ GetSystemMetrics(SM_CYFULLSCREEN)
+    xpos *= 65535; // for simulate the input
+    ypos *= 65535; // for simulate the input
 
+    // simulate the mouse input
     InputSimulator::SimulateMouseInput(code_up_down, xpos, ypos);
-
-
 }
-
 
 void sendallScreenshot(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN to) {
     /*
-
+    The function sends all the data of a screenshot.
+    it simmilar to sendall() but for UDP sockets and sends screenshot in parts.
     */
 
-    int sent = 0;
-    int sendLen = DATA_BUFSIZE * 5 + sizeof(int);
-    int error;
-    ScreenPacketPixel.resize(sendLen);
+    int sent = 0; // for saving the how many data was sent
+    int sendLen = DATA_BUFSIZE * 5 + sizeof(int); // length of sending part
+    int error; // saving error code
+    ScreenPacketPixel.resize(sendLen); // resizing part of pixels vecotr according to part size
 
+    // pointer to the buffer
     char* pPacket = (char*)&ScreenPacketPixel.front();
 
+    // loop of sending the parts
     for (int i = 0; i < 1280*720*4/(DATA_BUFSIZE * 5); i++) {
+
         pPacket = (char*)&ScreenPacketPixel.front();
         sendLen = DATA_BUFSIZE * 5 + sizeof(int);
+
+        // setting serial number
         memcpy(pPacket, &i, sizeof(int));
+        // setting the part of the image data
         memcpy(pPacket + sizeof(int), pdata + i* (sendLen - sizeof(int)), sendLen - sizeof(int));
 
+        // sending the part
         while (sendLen > 0) {
             sent = sendto(s, pPacket, sendLen, 0, (sockaddr*)&to, sizeof(to));
             if (sent == SOCKET_ERROR) {
@@ -513,28 +560,35 @@ void sendallScreenshot(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN to) 
             pPacket += sent;
             sendLen -= sent;
         }
-        if (sent == 0 || sent == SOCKET_ERROR) break;
+        if (sent == 0 || sent == SOCKET_ERROR) break; // if disconnected or error accured
     }
 }
 
 void recvPartScreenshot(SOCKET s, const char* pdata, SOCKADDR_IN from) {
     /*
-
+    This function recieves part of screenshot and update the part in the
+    Pixels vector buffer that recieved from pdata
     */
 
+    // legth of part
     int packLen = DATA_BUFSIZE * 5;
+    // saving the index
     int index = 0;
+    // length of all packet
     int sendLen = DATA_BUFSIZE * 5 + sizeof(int);
+    // resizing vector of part of pixels according to size
     ScreenPacketPixel.resize(sendLen);
+    // saving pointer to buffer
     char* pPacket = (char*)&ScreenPacketPixel.front();
 
+    // recieving part
     recvallUDP(s, (char*)&ScreenPacketPixel.front(), sendLen, from);
 
+    // saving index
     memcpy(&index, pPacket, sizeof(int));
+
+    // updating buffer according to index
     memcpy((void*)(pdata + index*packLen), pPacket + sizeof(int), sendLen - sizeof(int));
-    
-    //recvallUDP(s, (char*)&index, sizeof(int), from);
-    //recvallUDP(s, pdata + index * packLen, sizeof(packLen), from);
 }
 
 // Function that receive data
@@ -562,7 +616,9 @@ DWORD WINAPI serverReceive(LPVOID lpParam)
                 << WSAGetLastError() << endl;
             return -1;
         }
-        //Password::xor_encypt((char*)&command, sizeof(int), (char*)password, PASSWORD_SIZE);
+        // decrypting
+        // Password::xor_encypt((char*)&command, sizeof(int), (char*)password, PASSWORD_SIZE);
+        
         // execute command (exit = 0, register mouse press = 1, register key press = 2)
         switch (command)
         {
@@ -584,95 +640,34 @@ DWORD WINAPI serverReceive(LPVOID lpParam)
 }
 
 // Function that sends data to client
-DWORD WINAPI serverSend(LPVOID lpParam)
-{
-    // Created client socket
-    SOCKET client = *(SOCKET*)lpParam;
-
-    // Server executes continuously
-    while (threadFlag) {
-        screenshot = Screen::ResizeImage(Screen::GetScreenShot(), 1280, 720);
-        Screen::HBITMAPToPixels(screenshot, Pixels, 1280, 720, 32);
-        //bufferImage = Screen::GetPixelsFromHBITMAP(screenshot);
-        // Input message server
-        // wants to send to client
-
-        // If sending failed
-        // return -1
-        int sz = Pixels.size();
-        sendall(client, (char*)&sz, sizeof(sz));
-        sendall(client, (char*)&Pixels.front(), Pixels.size() * sizeof(Pixels.front()));
-
-        //delete[] bufferImage;
-        DeleteObject(screenshot);
-        Pixels.clear();
-    }
-    return 1;
-}
-
-
-DWORD WINAPI serverSendUDP(LPVOID lpParam)
-{
-
-
-    // Created client socket
-    SOCKET client = *(SOCKET*)lpParam;
-
-    double delay = 1 / 30 * CLOCKS_PER_SEC;
-    clock_t last_cycle = clock();
-    screenshot = Screen::GetScreenShot();
-    double now = (clock() - last_cycle) / (double)CLOCKS_PER_SEC;;
-    last_cycle = clock();
-    screenshot = Screen::ResizeImage(screenshot, 1280, 720);
-    now = (clock() - last_cycle) / (double)CLOCKS_PER_SEC;;
-    Screen::HBITMAPToPixels(screenshot, Pixels, 1280, 720, 32);
-    int sz = Pixels.size();
-    sendallUDP(client, (char*)&sz, sizeof(sz), to);
-    DeleteObject(screenshot);
-    while (threadFlag) {
-
-        screenshot = Screen::ResizeImage(Screen::GetScreenShot(), 1280, 720);
-        Screen::HBITMAPToPixels(screenshot, Pixels, 1280, 720, 32);
-
-        sendallUDP(client, (char*)&Pixels.front(), Pixels.size() * sizeof(Pixels.front()), to);
-        //delete[] bufferImage;
-        DeleteObject(screenshot);
-        Pixels.clear();
-        while (clock() - last_cycle < delay);
-        last_cycle = clock();
-    }
-    return 1;
-}
-
 DWORD WINAPI serverSendUDPNew(LPVOID lpParam)
 {
     // Created client socket
     SOCKET client = *(SOCKET*)lpParam;
-    double delay = 1 / 30 * CLOCKS_PER_SEC;
-    clock_t last_cycle = clock();
+
+    // getting screenshot and resizing it
     screenshot = Screen::GetScreenShot();
-    double now = (clock() - last_cycle) / (double)CLOCKS_PER_SEC;;
-    last_cycle = clock();
     screenshot = Screen::ResizeImage(screenshot, 1280, 720);
-    now = (clock() - last_cycle) / (double)CLOCKS_PER_SEC;;
+
+    // convert HBITMAP to pixels
     Screen::HBITMAPToPixels(screenshot, Pixels, 1280, 720, 32);
     int sz = Pixels.size();
+    
+    // sending size of vector
     sendallUDP(client, (char*)&sz, sizeof(sz), to);
     DeleteObject(screenshot);
-    while (threadFlag) {
 
-        last_cycle = clock();
+    // Server executes continuously
+    while (threadFlag) {
+        // getting screenshot and resizing it
         screenshot = Screen::ResizeImage(Screen::GetScreenShot(), 1280, 720);
-        last_cycle = clock();
+
+        // convert HBITMAP to pixels
         Screen::HBITMAPToPixels(screenshot, Pixels, 1280, 720, 32);
 
-        now = (clock() - last_cycle) / (double)CLOCKS_PER_SEC;;
-        last_cycle = clock();
-
+        // sending all screenshot
         sendallScreenshot(client, (char*)&Pixels.front(), Pixels.size() * sizeof(Pixels.front()), to);
 
-        now = (clock() - last_cycle) / (double)CLOCKS_PER_SEC;;
-        //delete[] bufferImage;
         DeleteObject(screenshot);
         Pixels.clear();
     }
@@ -680,60 +675,20 @@ DWORD WINAPI serverSendUDPNew(LPVOID lpParam)
 }
 
 // Function that receive data from server
-DWORD WINAPI clientReceive(LPVOID lpParam)
-{
-
-    // Created server socket
-    SOCKET server = *(SOCKET*)lpParam;
-    int size = 0;
-    // Client executes continuously
-    while (threadFlag) {
-
-        size = 0;
-        recvall(server, (char*)&size, sizeof(size));
-        if (size == 0) continue;
-        Pixels.resize(size);
-        recvall(server, (char*)&Pixels.front(), size * sizeof(Pixels.front()));
-        if (!Pixels.empty())
-            DeleteObject(screenshot);
-            screenshot = Screen::HBITMAPFromPixels(Pixels, 1280, 720, 32);
-            Pixels.clear();
-
-    }
-    return 1;
-}
-
-DWORD WINAPI clientReceiveUDP(LPVOID lpParam)
-{
-    // Created server socket
-    SOCKET server = *(SOCKET*)lpParam;
-    int size = 0;
-    recvallUDP(server, (char*)&size, sizeof(size), from);
-    Pixels.resize(size);
-    // Client executes continuously
-    while (threadFlag) {
-        recvallUDP(server, (char*)&Pixels.front(), size * sizeof(Pixels.front()), from);
-
-        if (!Pixels.empty())
-            DeleteObject(screenshot);
-
-        screenshot = Screen::HBITMAPFromPixels(Pixels, 1280, 720, 32);
-    }
-    return 1;
-}
-
 DWORD WINAPI clientReceiveUDPNew(LPVOID lpParam)
 {
-
     // Created server socket
     SOCKET server = *(SOCKET*)lpParam;
+
+    // receive Pixels vector size
     int size = 0;
     recvallUDP(server, (char*)&size, sizeof(size), from);
     Pixels.resize(size);
+
     // Client executes continuously
     while (threadFlag) {
+        // receive part of screenshot and update it in Pixels vector
         recvPartScreenshot(server, (char*)&Pixels.front(), from);
-
     }
     return 1;
 }
@@ -747,8 +702,7 @@ DWORD WINAPI clientSend(LPVOID lpParam)
     // Client executes continuously
     while (threadFlag) {
 
-        // Input message client
-        // wants to send to server
+        // sending all data from KeysPressed which saves clients input
         if (!keysPressed.empty())
         {
             //Password::xor_encypt((char*)&keysPressed[0], sizeof(int), (char*)password, PASSWORD_SIZE);
@@ -762,29 +716,47 @@ DWORD WINAPI clientSend(LPVOID lpParam)
 }
 
 void createAllUI(HWND hwnd) {
-    vector<HWND> main_menu, join_menu, host_menu;// , server_menu, client_menu;
+    // Function for creating all UI for the screens
 
+    // vector for every screen
+    vector<HWND> main_menu, join_menu, host_menu;
+
+    // getting window size and etc.
     RECT clientRect = {};
     GetClientRect(hwnd, &clientRect);
     int width = clientRect.right - clientRect.left;
     int height = clientRect.bottom - clientRect.top;
 
     // Main Menu
+
+    // Creating Title
     HWND text = CreateUI::CreateTextBox(L"TEAM WATCHER", width / 2 - 100, height / 8, 200, 30, hwnd);
+    
+    // setting font
     HFONT hFontTitle = CreateFont(30, 0, 0, 0, FW_DEMIBOLD, FALSE, FALSE, FALSE, ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Tahoma");
     SendMessage(text, WM_SETFONT, WPARAM(hFontTitle), TRUE);
 
     main_menu.push_back(text);
+
+    // Creating Buttons
     main_menu.push_back(CreateUI::CreateButton(L"JOIN", width / 2 - 80, height / 8 + 100, 65, 25, hwnd, JOIN_MENU));
     main_menu.push_back(CreateUI::CreateButton(L"HOST", width / 2 + 15, height / 8 + 100, 65, 25, hwnd, HOST_MENU));
     Menus[MAIN_MENU] = main_menu;
 
     // Join Menu
+
+    // Creating Back Button
     join_menu.push_back(CreateUI::CreateButton(L"Back", X, Y, 65, 25, hwnd, MAIN_MENU));
+
+    // Creating Labels
     join_menu.push_back(CreateUI::CreateTextBox(L"Enter Destination IP: ", X, Y + 50, 200, 25, hwnd));
     join_menu.push_back(CreateUI::CreateTextBox(L"Enter Destination PORT: ", X, Y + 80, 200, 25, hwnd));
     join_menu.push_back(CreateUI::CreateTextBox(L"Enter Password: ", X, Y + 110, 200, 25, hwnd));
+
+    // Creating Connect Button
     join_menu.push_back(CreateUI::CreateButton(L"Connect", X, Y + 160, 65, 25, hwnd, CONNECTION));
+
+    // Creating Input Boxes
     ipText = CreateUI::CreateInputBox(L"", X + 180, Y + 50, 300, 20, hwnd);
     joinPortText = CreateUI::CreateInputBox(L"", X + 180, Y + 80, 300, 20, hwnd);
     joinPassText = CreateUI::CreateInputBox(L"", X + 180, Y + 110, 300, 20, hwnd);
@@ -794,6 +766,8 @@ void createAllUI(HWND hwnd) {
     Menus[JOIN_MENU] = join_menu;
 
     // Host Menu
+
+    // Getting local ip to show it
     char szHostName[255];
     gethostname(szHostName, 255);
     struct hostent* host_entry;
@@ -804,14 +778,23 @@ void createAllUI(HWND hwnd) {
     mbstowcs(local, szLocalIP, strlen(szLocalIP) + 1);
     LPWSTR ptr = local;
 
+    // Creating Back Button
     host_menu.push_back(CreateUI::CreateButton(L"Back", X, Y, 65, 25, hwnd, MAIN_MENU));
+
+    // Creating labels
     host_menu.push_back(CreateUI::CreateTextBox(L"Your IP is: ", X, Y + 50, 200, 25, hwnd));
     host_menu.push_back(CreateUI::CreateTextBox(ptr, X + 180, Y + 50, 200, 25, hwnd));
     host_menu.push_back(CreateUI::CreateTextBox(L"Enter PORT: ", X, Y + 80, 200, 25, hwnd));
     host_menu.push_back(CreateUI::CreateTextBox(L"Your Password: ", X, Y + 110, 200, 25, hwnd));
+
+    // Creating control password buttons
     host_menu.push_back(CreateUI::CreateButton(L"Reset", X + 340, Y + 110, 65, 25, hwnd, RESET_PASSWORD));
     host_menu.push_back(CreateUI::CreateButton(L"Copy", X + 415, Y + 110, 65, 25, hwnd, COPY_PASSWORD));
+
+    // Creating Create Server Button
     host_menu.push_back(CreateUI::CreateButton(L"Create", X, Y + 160, 65, 25, hwnd, CREATION));
+
+    // Creating input boxes
     hostPortText = CreateUI::CreateInputBox(L"", X + 180, Y + 80, 300, 20, hwnd);
     hostPassText = CreateUI::CreateTextBox(password, X + 180, Y + 110, 80, 25, hwnd);
     host_menu.push_back(hostPortText);
@@ -820,6 +803,8 @@ void createAllUI(HWND hwnd) {
 }
 
 void invisible() {
+    // Function to make all the UI elements invisible
+    
     for (auto v : Menus) {
         for (auto e : v.second) {
             ShowWindow(e, SW_HIDE);
@@ -828,6 +813,8 @@ void invisible() {
 }
 
 void visible(int menuNum) {
+    // Function to make UI elements of specific ellement to show up
+
     for (auto e : Menus[menuNum]) {
         ShowWindow(e, SW_SHOW);
     }
@@ -843,24 +830,29 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
         return 1;
     }
 
+    // Creating all sockets
     if (!CreateAllSockets()) {
         MessageBox(NULL, TEXT("Invalid Socket"), NULL, MB_ICONERROR);
         return 1;
     }
 
+    // Creating all windows
     if (!CreateAllWindows(currentInstance)) {
         MessageBox(NULL, TEXT("Can't create windows"), NULL, MB_ICONERROR);
         return 1;
     }
 
+    // Show start window
     ShowWindow(start_hwnd, cmdShow);
     UpdateWindow(start_hwnd);
 
+    // Message Handling Function
     while (GetMessage(&msg, nullptr, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
 
+    // cleanup and exit
     clean_exit();
     WSACleanup();
 
@@ -868,43 +860,56 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
 }
 
 LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, LPARAM lparam) {
+    // Function to handle start window messages
     switch (msg) {
     case WM_CREATE:
+        // When Created 
+
+        // Create All window UI
         createAllUI(hwnd);
+
+        // make it all invisible
         invisible();
+
+        // show only main menu UI
         visible(MAIN_MENU);
         break;
 
     case WM_COMMAND:
+        // When command received
         switch (LOWORD(param))
         {
         case MAIN_MENU:
             // START MENU
+            // Show start menu UI elements
             invisible();
             visible(MAIN_MENU);
             break;
         case HOST_MENU:
             // HOST
+            // Show host menu UI elements
             invisible();
             visible(HOST_MENU);
             break;
 
         case JOIN_MENU:
             // JOIN
+            // Show join menu UI elements
             invisible();
             visible(JOIN_MENU);
             break;
 
         case CONNECTION:
             // CONNECTION PROCESS
+
+            // getting all the text from Input Boxes to buffers
             gwstatIP = GetWindowText(ipText, ipSaved, 20);
             gwstatPort = GetWindowText(joinPortText, portSaved, 20);
             gwstatPass = GetWindowText(joinPassText, passSaved, 20);
 
-            MessageBox(hwnd, ipSaved, portSaved, MB_OK);
-
             port = _wtoi(portSaved);
 
+            // Checking port
             if (port <= 0 || port > 65535) {
                 MessageBox(NULL, TEXT("This is not a port!\nPorts are between 0-65535"), NULL, MB_OK);
                 break;
@@ -918,35 +923,46 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
             struct sockaddr_in addr;
             addr.sin_family = AF_INET;
             addr.sin_port = htons(port);
+
+            // getting and checking entered ip address
             if (0 == inet_pton(AF_INET, ip, &addr.sin_addr)) {
                 MessageBox(NULL, TEXT("This is not a IPv4 address!\nIP's are in the following format:\nIPv4:(1-3 numbers).(1-3 numbers).(1-3 numbers).(1-3 numbers)"), NULL, MB_OK);
                 break;
             }
 
+            // Connect to server
             error = connect(sTCP, (sockaddr*)&addr, sizeof(addr));
             lasterror = WSAGetLastError();
-            if (error != SOCKET_ERROR) {
-                //commSide = CLIENT_MENU;
+            if (error != SOCKET_ERROR) { // If connection not failed
+                commSide = CLIENT_MENU; // setting communication side
+
+                // Hide start window
                 ShowWindow(start_hwnd, SW_HIDE);
+
+                // Show client window
                 error = ShowWindow(client_hwnd, SW_SHOW);
                 error = GetLastError();
                 UpdateWindow(client_hwnd);
 
+                // Set UDP address
                 InternetAddrUDP.sin_family = AF_INET;
                 InternetAddrUDP.sin_addr.s_addr = htonl(INADDR_ANY);
                 InternetAddrUDP.sin_port = 0; // letting the os decide
-                //serverUDPport = 5000;
 
+                // bind UDP socket
                 bind(sUDP, (sockaddr*)&InternetAddrUDP, sizeof(InternetAddrUDP));
                 addrlen = sizeof(InternetAddrUDP);
                 getsockname(sUDP, (struct sockaddr*)&InternetAddrUDP, &addrlen); // read binding
 
                 memcpy(&serverUDPport, &InternetAddrUDP.sin_port, sizeof(serverUDPport));  // get the port number
 
+                // Send UDP port to server
                 sendall(sTCP, (char*)&serverUDPport, sizeof(int));
 
+                // Setting ThreadFlag to TRUE
                 threadFlag = TRUE;
 
+                // Creating ClientReceiving Thread
                 clientReceiving = CreateThread(NULL,
                     0,
                     clientReceiveUDPNew,
@@ -954,6 +970,7 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
                     0,
                     &tid);
 
+                // Creating Client Sending Thread
                 clientSending = CreateThread(NULL,
                     0,
                     clientSend,
@@ -962,15 +979,14 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
                     &tid);
             }
             else
-                MessageBox(NULL, TEXT("connection failed with error"), NULL, MB_ICONERROR);
+                MessageBox(NULL, TEXT("connection failed with error"), NULL, MB_ICONERROR); // If connection failed
             break;
 
         case CREATION:
             // CREATION PROCESS
+            // getting all the text from Input Boxes to buffers
             gwstatPort = GetWindowText(hostPortText, portSaved, 20);
             gwstatPass = GetWindowText(hostPassText, passSaved, 20);
-
-            //MessageBox(hwnd, passSaved, portSaved, MB_OK);
 
             port = _wtoi(portSaved);
 
@@ -978,32 +994,44 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
             InternetAddr.sin_addr.s_addr = htonl(INADDR_ANY);
             InternetAddr.sin_port = htons(port);
 
+            // Checking port
             if (port <= 0 || port > 65535) {
                 MessageBox(NULL, TEXT("This is not a port!\nPorts are between 0-65535"), NULL, MB_OK);
                 break;
             }
 
+            // Binding the socket
             bind(sTCP, (PSOCKADDR)&InternetAddr, sizeof(InternetAddr));
 
+            // Listening to incoming connection requests
             if (listen(sTCP, 1) == SOCKET_ERROR)
             {
+                // If error accured
                 printf("listen() failed with error %d\n", WSAGetLastError());
                 MessageBox(NULL, TEXT("listen() failed with error"), NULL, MB_ICONERROR);
                 break;
             }
             else
             {
+                // If listen completed without problems
                 MessageBox(NULL, TEXT("listen() is OK!"), NULL, MB_OK);
             }
+
+            // Creating Accept Socket
             addrlen = sizeof(to);
             sAccept = accept(sTCP, (sockaddr*)&to, &addrlen);
             addrlen = sizeof(to);
-            error = getpeername(sAccept, (sockaddr*)&to, &addrlen);
-            //WSAAsyncSelect(sTCP, hwnd, HOST_MSG_NOTIFICATION, FD_ACCEPT | FD_CONNECT | FD_READ | FD_CLOSE);
-            //commSide = SERVER_MENU;
 
+            // get accepted socket address
+            error = getpeername(sAccept, (sockaddr*)&to, &addrlen);
+            
+            // Setting communication side as server side
+            commSide = SERVER_MENU;
+
+            // Hide start window
             ShowWindow(start_hwnd, SW_HIDE);
 
+            // Show server window
             ShowWindow(server_hwnd, SW_SHOW);
             UpdateWindow(server_hwnd);
 
@@ -1011,14 +1039,18 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
             InternetAddrUDP.sin_addr.s_addr = htonl(INADDR_ANY);
             InternetAddrUDP.sin_port = 0; // let the os choose port
 
+            // Binding UDP Socket
             bind(sUDP, (PSOCKADDR)&InternetAddrUDP, sizeof(InternetAddrUDP));
 
+            // Receive client UDP port
             recvall(sAccept, (char*)&clientUDPport, sizeof(int));
 
             to.sin_port = clientUDPport;
 
+            // Setting ThreadFlag to TRUE
             threadFlag = TRUE;
 
+            // Creating Server sending Thread
             serverSending = CreateThread(NULL,
                 0,
                 serverSendUDPNew,
@@ -1026,7 +1058,7 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
                 0,
                 &tid);
 
-
+            // Creating Server receiving Thread
             serverReceiving = CreateThread(NULL,
                 0,
                 serverReceive,
@@ -1037,12 +1069,14 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
 
         case RESET_PASSWORD:
             // RESET PASSWORD PROCESS
+            // Reseting password
             password = Password::generate(PASSWORD_SIZE);
             SetWindowText(hostPassText, password);
             break;
 
         case COPY_PASSWORD:
             // COPY PASSWORD PROCESS
+            // Copy password to Clipboard
             HWND hwnd1 = GetDesktopWindow();
             Clipboard::toClipboard(hwnd1, password);
             break;
@@ -1050,6 +1084,7 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
         break;
 
     case WM_DESTROY:
+        // If window closed
         clean_exit();
         WSACleanup();
         PostQuitMessage(0);
@@ -1063,19 +1098,21 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
 LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, LPARAM lparam) {
     switch (msg) {
     case WM_CREATE:
-        //createAllUI(hwnd);
-        //invisible();
-        //visible(CLIENT_MENU);
         break;
 
     case WM_LBUTTONDOWN:
+        // Push mouse press command
         keysPressed.push_back(MOUSE_PRESS);
+
+        // Get coordinates of press
         xPos = LOWORD(lparam);
         yPos = HIWORD(lparam);
 
+        // Get window details
         GetClientRect(hwnd, &Rect);
         MapWindowPoints(HWND_DESKTOP, GetParent(hwnd), (LPPOINT)&Rect, 2);
 
+        // Push all data
         keysPressed.push_back(xPos);
         keysPressed.push_back(yPos);
         keysPressed.push_back(Rect.right - Rect.left); //width
@@ -1085,13 +1122,18 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         break;
 
     case WM_LBUTTONUP:
+        // Push mouse press command
         keysPressed.push_back(MOUSE_PRESS);
+
+        // Get coordinates of press
         xPos = LOWORD(lparam);
         yPos = HIWORD(lparam);
 
+        // Get window details
         GetClientRect(hwnd, &Rect);
         MapWindowPoints(HWND_DESKTOP, GetParent(hwnd), (LPPOINT)&Rect, 2);
 
+        // Push all data
         keysPressed.push_back(xPos);
         keysPressed.push_back(yPos);
         keysPressed.push_back(Rect.right - Rect.left); //width
@@ -1101,13 +1143,18 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         break;
 
     case WM_MBUTTONDOWN:
+        // Push mouse press command
         keysPressed.push_back(MOUSE_PRESS);
+
+        // Get coordinates of press
         xPos = LOWORD(lparam);
         yPos = HIWORD(lparam);
 
+        // Get window details
         GetClientRect(hwnd, &Rect);
         MapWindowPoints(HWND_DESKTOP, GetParent(hwnd), (LPPOINT)&Rect, 2);
 
+        // Push all data
         keysPressed.push_back(xPos);
         keysPressed.push_back(yPos);
         keysPressed.push_back(Rect.right - Rect.left); //width
@@ -1117,13 +1164,18 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         break;
 
     case WM_MBUTTONUP:
+        // Push mouse press command
         keysPressed.push_back(MOUSE_PRESS);
+        
+        // Get coordinates of press
         xPos = LOWORD(lparam);
         yPos = HIWORD(lparam);
 
+        // Get window details
         GetClientRect(hwnd, &Rect);
         MapWindowPoints(HWND_DESKTOP, GetParent(hwnd), (LPPOINT)&Rect, 2);
 
+        // Push all data
         keysPressed.push_back(xPos);
         keysPressed.push_back(yPos);
         keysPressed.push_back(Rect.right - Rect.left); //width
@@ -1133,12 +1185,18 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         break;
 
     case WM_RBUTTONDOWN:
+        // Push mouse press command
         keysPressed.push_back(MOUSE_PRESS);
+
+        // Get coordinates of press
         xPos = LOWORD(lparam);
         yPos = HIWORD(lparam);
+
+        // Get window details
         GetClientRect(hwnd, &Rect);
         MapWindowPoints(HWND_DESKTOP, GetParent(hwnd), (LPPOINT)&Rect, 2);
 
+        // Push all data
         keysPressed.push_back(xPos);
         keysPressed.push_back(yPos);
         keysPressed.push_back(Rect.right - Rect.left); //width
@@ -1148,15 +1206,18 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         break;
 
     case WM_RBUTTONUP:
+        // Push mouse press command
         keysPressed.push_back(MOUSE_PRESS);
+
+        // Get coordinates of press
         xPos = LOWORD(lparam);
         yPos = HIWORD(lparam);
 
-        Rect;
-
+        // Get window details
         GetClientRect(hwnd, &Rect);
         MapWindowPoints(HWND_DESKTOP, GetParent(hwnd), (LPPOINT)&Rect, 2);
 
+        // Push all data
         keysPressed.push_back(xPos);
         keysPressed.push_back(yPos);
         keysPressed.push_back(Rect.right - Rect.left); //width
@@ -1166,51 +1227,69 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         break;
 
     case WM_KEYDOWN:
+        // Push key press command and data
         keysPressed.push_back(KEY_PRESS);
         keysPressed.push_back(param);
         keysPressed.push_back(0);
         break;
 
     case WM_KEYUP:
+        // Push key press command and data
         keysPressed.push_back(KEY_PRESS);
         keysPressed.push_back(param);
         keysPressed.push_back(KEYEVENTF_KEYUP);
         break;
 
     case WM_SYSKEYDOWN:
+        // Push key press command and data
         keysPressed.push_back(KEY_PRESS);
         keysPressed.push_back(param);
         keysPressed.push_back(0);
         break;
 
     case WM_SYSKEYUP:
+        // Push key press command and data
         keysPressed.push_back(KEY_PRESS);
         keysPressed.push_back(param);
         keysPressed.push_back(KEYEVENTF_KEYUP);
         break;
 
     case WM_PAINT:
+        // Refreshing the image shown on client Window
+        // This message is sended automatic all the time
+
         hDC = GetDC(hwnd);
         rc = { 0 };
         ::GetClientRect(hwnd, &rc);
-        if(Pixels.size() != 0)
+        if(Pixels.size() != 0) {
+            // Creating HBITMAP from Pixels
             screenshot = Screen::HBITMAPFromPixels(Pixels, 1280, 720, 32);
-            SerialNum = Screen::DrawBitmap(hDC, 0, 0, rc.right, rc.bottom, screenshot, SRCCOPY);
-        if (SerialNum == FALSE)
-            SerialNum = GetLastError();
+            // Draw HBITMAP
+            draw_error = Screen::DrawBitmap(hDC, 0, 0, rc.right, rc.bottom, screenshot, SRCCOPY);
+        }
+        if (draw_error == FALSE)
+            draw_error = GetLastError();
         DeleteObject(screenshot);
         ReleaseDC(hwnd, hDC);
         break;
 
     case WM_CLOSE:
+        // If window closed
+
+        // Hide Client Window
         ShowWindow(client_hwnd, SW_HIDE);
+
+        // Show Start window
         ShowWindow(start_hwnd, SW_SHOW);
         UpdateWindow(start_hwnd);
+
+        // Clean return to start window
         clean_exit();
         CreateAllSockets();
         break;
 
     case WM_DESTROY:
+        // Destroying window
         PostQuitMessage(0);
         return 0;
 
@@ -1223,22 +1302,27 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
 LRESULT CALLBACK ServerWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, LPARAM lparam) {
     switch (msg) {
     case WM_CREATE:
-        //createAllUI(hwnd);
-        //invisible();
-        //visible(SERVER_MENU);
         break;
 
     case WM_CLOSE:
+        // If window closed
+
+        // Hide Server Window
         error = ShowWindow(server_hwnd, SW_HIDE);
         error = GetLastError();
+
+        // Show Start window
         error = ShowWindow(start_hwnd, SW_SHOW);
         error = GetLastError();
         UpdateWindow(start_hwnd);
+
+        // Clean return to start window
         clean_exit();
         CreateAllSockets();
         break;
 
     case WM_DESTROY:
+        // Destroying window
         PostQuitMessage(0);
         return 0;
 
@@ -1249,4 +1333,3 @@ LRESULT CALLBACK ServerWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
 }
 
 #endif // MAIN
-

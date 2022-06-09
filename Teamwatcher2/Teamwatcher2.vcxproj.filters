@@ -48,6 +48,9 @@
     <ClInclude Include="DataTransferHandler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Cipher.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Teamwatcher2.cpp">
@@ -72,6 +75,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="DataTransferHandler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Cipher.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

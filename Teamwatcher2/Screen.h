@@ -18,6 +18,9 @@ class Screen
 public:
 	static HBITMAP GetScreenShot(void)
     {
+        // This function is to get screenshot of the Screen
+        // returns HBITNAP 
+
         int w = GetSystemMetrics(SM_CXSCREEN);
 
         int h = GetSystemMetrics(SM_CYSCREEN);
@@ -38,61 +41,17 @@ public:
 
         // save bitmap to clipboard
         return hBitmap;
-        OpenClipboard(NULL);
-        EmptyClipboard();
-        SetClipboardData(CF_BITMAP, hBitmap);
-        CloseClipboard();
-
-        // clean up
-        SelectObject(hDC, old_obj);
-        DeleteDC(hDC);
-        ReleaseDC(NULL, hScreen);
-        DeleteObject(hBitmap);
-    }
-
-    static HBITMAP GetScreenShotNew(void)
-    {
-        HDC hdc = GetDC(NULL); // get the desktop device context
-        HDC hDest = CreateCompatibleDC(hdc); // create a device context to use yourself
-
-        // get the height and width of the screen
-        int height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-        int width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-
-        // create a bitmap
-        HBITMAP hbDesktop = CreateCompatibleBitmap(hdc, width, height);
-
-        // use the previously created device context with the bitmap
-        SelectObject(hDest, hbDesktop);
-
-        // copy from the desktop device context to the bitmap device context
-        // call this once per 'frame'
-        BitBlt(hDest, 0, 0, width, height, hdc, 0, 0, SRCCOPY);
-
-        // after the recording is done, release the desktop context you got..
-        ReleaseDC(NULL, hdc);
-
-        // ..delete the bitmap you were using to capture frames..
-        //DeleteObject(hbDesktop);
-
-        // ..and delete the context you created
-        DeleteDC(hDest);
-
-        return hbDesktop;
-    }
-
-
-    static void SetImage(HWND hScreen, HBITMAP hImage){
-        SendMessage(hScreen, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM)hImage);
     }
 
     static HBITMAP ResizeImage(HBITMAP hBitmap, int w, int h) {
+        // Returns a resized HBITMAP
         HANDLE ret = CopyImage(hBitmap, IMAGE_BITMAP, w, h, LR_COPYDELETEORG);
         return (HBITMAP)ret;
     }
 
     static BOOL DrawBitmap(HDC hDC, INT x, INT y, INT width, INT height, HBITMAP hBitmap, DWORD dwROP)
     {
+        // Drawing HBITMAP on screen
         HDC hDCBits;
         BITMAP Bitmap;
         BOOL bResult;
@@ -100,12 +59,14 @@ public:
         if (!hDC || !hBitmap)
             return FALSE;
 
+        // get HDC
         hDCBits = CreateCompatibleDC(hDC);
         GetObject(hBitmap, sizeof(BITMAP), (LPSTR)&Bitmap);
         SelectObject(hDCBits, hBitmap);
-        // Replace with StretchBlt call
-        //bResult = BitBlt(hDC, x, y, Bitmap.bmWidth, Bitmap.bmHeight, hDCBits, 0, 0, dwROP);
+
         SetStretchBltMode(hDC, HALFTONE);
+
+        // Stretching Image according to screen
         bResult = StretchBlt(hDC, x, y, width, height,
             hDCBits, 0, 0, Bitmap.bmWidth, Bitmap.bmHeight, dwROP);
         DeleteDC(hDCBits);
@@ -114,40 +75,10 @@ public:
         return bResult;
     }
 
-    static BYTE* GetPixelsFromHBITMAP(HBITMAP hBitmap)
-    {
-        HDC hdc = GetDC(0);
-
-        BITMAPINFO MyBMInfo = { 0 };
-        MyBMInfo.bmiHeader.biSize = sizeof(MyBMInfo.bmiHeader);
-
-        // Get the BITMAPINFO structure from the bitmap
-        if (0 == GetDIBits(hdc, hBitmap, 0, 0, NULL, &MyBMInfo, DIB_RGB_COLORS)) {
-            //cout << "error" << endl;
-        }
-
-        // create the bitmap buffer
-        BYTE* lpPixels = new BYTE[MyBMInfo.bmiHeader.biSizeImage];
-
-        // Better do this here - the original bitmap might have BI_BITFILEDS, which makes it
-        // necessary to read the color table - you might not want this.
-        MyBMInfo.bmiHeader.biCompression = BI_RGB;
-
-        // get the actual bitmap buffer
-        if (0 == GetDIBits(hdc, hBitmap, 0, MyBMInfo.bmiHeader.biHeight, (LPVOID)lpPixels, &MyBMInfo, DIB_RGB_COLORS)) {
-            //cout << "error2" << endl;
-        }
-        DeleteDC(hdc);
-        return lpPixels;
-    }
-
-    static void CreateHBITMAPfromPixels(HBITMAP bitmap, BYTE* pImageData)
-    {
-        SetBitmapBits(bitmap, sizeof(pImageData), pImageData);
-    }
-
     static HBITMAP HBITMAPFromPixels(const std::vector<uint8_t>& Pixels, int width, int height, int BitsPerPixel)
     {
+        // Function returns a vector of bytes
+        // of HBITMAP pixels
         BITMAPINFO Info = { 0 };
         std::memset(&Info, 0, sizeof(BITMAPINFO));
 
@@ -167,7 +98,7 @@ public:
 
     static void HBITMAPToPixels(HBITMAP BitmapHandle, std::vector<uint8_t>& Pixels, int width, int height, int BitsPerPixel)
     {
-
+        // Function returns a HBITMAP from vector of bytes of pixels
         Pixels.clear();
         BITMAP Bmp = { 0 };
         BITMAPINFO Info = { 0 };

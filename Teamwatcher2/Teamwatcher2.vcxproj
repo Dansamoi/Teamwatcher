@@ -139,6 +139,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="Cipher.h" />
     <ClInclude Include="Clipboard.h" />
     <ClInclude Include="CreateUI.h" />
     <ClInclude Include="Data.h" />
@@ -152,6 +153,7 @@
     <ClInclude Include="Teamwatcher2.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Cipher.cpp" />
     <ClCompile Include="Clipboard.cpp" />
     <ClCompile Include="CreateUI.cpp" />
     <ClCompile Include="DataTransferHandler.cpp" />

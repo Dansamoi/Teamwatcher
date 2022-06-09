@@ -174,52 +174,68 @@ void DataTransferHandler::recieveKeyPress(SOCKET s)
     InputSimulator::SimulateKeyInput(code, up_down);
 }
 
-void DataTransferHandler::recieveMousePress(SOCKET s)
-{
-    int xPos = 0;
-    int yPos = 0;
-    int w, h;
-    float xpos, ypos;
-    int code_up_down = 0;
+void DataTransferHandler::recieveMousePress(SOCKET s) {
+    /*
+    The function receive all the Mouse Key Press Input data,
+    and simulates the input on the computer.
+    */
 
+    int xPos = 0; // for x coordinate
+    int yPos = 0; // for y coordinate
+    int w, h; // for width and height
+    float xpos, ypos; // for real x, y coordinates (for new window)
+    int code_up_down = 0; // for up or down code
 
+    // recieve x position
     recvall(s, (char*)&xPos, sizeof(int));
+    // recieve y position
     recvall(s, (char*)&yPos, sizeof(int));
+    // recieve width
     recvall(s, (char*)&w, sizeof(int));
+    // recieve height
     recvall(s, (char*)&h, sizeof(int));
 
+    // calculating x and y positions
     xpos = (float)xPos / w;
     ypos = (float)yPos / h;
 
+    // recieve up or down key
     recvall(s, (char*)&code_up_down, sizeof(int));
 
-    xpos *= 65535; // */ GetSystemMetrics(SM_CXFULLSCREEN)
-    ypos *= 65535; // */ GetSystemMetrics(SM_CYFULLSCREEN)
+    xpos *= 65535; // for simulate the input
+    ypos *= 65535; // for simulate the input
 
+    // simulate the mouse input
     InputSimulator::SimulateMouseInput(code_up_down, xpos, ypos);
-
-
 }
 
-void DataTransferHandler::sendallScreenshot(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN to)
-{
+void DataTransferHandler::sendallScreenshot(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN to) {
     /*
-
+    The function sends all the data of a screenshot.
+    it simmilar to sendall() but for UDP sockets and sends screenshot in parts.
     */
-    std::vector<uint8_t> ScreenPacketPixel;
-    int sent = 0;
-    int sendLen = DATA_BUFSIZE * 5 + sizeof(int);
-    int error;
-    ScreenPacketPixel.resize(sendLen);
 
+    std::vector<uint8_t> ScreenPacketPixel;
+    int sent = 0; // for saving the how many data was sent
+    int sendLen = DATA_BUFSIZE * 5 + sizeof(int); // length of sending part
+    int error; // saving error code
+    ScreenPacketPixel.resize(sendLen); // resizing part of pixels vecotr according to part size
+
+    // pointer to the buffer
     char* pPacket = (char*)&ScreenPacketPixel.front();
 
+    // loop of sending the parts
     for (int i = 0; i < 1280 * 720 * 4 / (DATA_BUFSIZE * 5); i++) {
+
         pPacket = (char*)&ScreenPacketPixel.front();
         sendLen = DATA_BUFSIZE * 5 + sizeof(int);
+
+        // setting serial number
         memcpy(pPacket, &i, sizeof(int));
+        // setting the part of the image data
         memcpy(pPacket + sizeof(int), pdata + i * (sendLen - sizeof(int)), sendLen - sizeof(int));
 
+        // sending the part
         while (sendLen > 0) {
             sent = sendto(s, pPacket, sendLen, 0, (sockaddr*)&to, sizeof(to));
             if (sent == SOCKET_ERROR) {
@@ -231,27 +247,34 @@ void DataTransferHandler::sendallScreenshot(SOCKET s, const char* pdata, int buf
             pPacket += sent;
             sendLen -= sent;
         }
-        if (sent == 0 || sent == SOCKET_ERROR) break;
+        if (sent == 0 || sent == SOCKET_ERROR) break; // if disconnected or error accured
     }
 }
 
-void DataTransferHandler::recvPartScreenshot(SOCKET s, const char* pdata, SOCKADDR_IN from)
-{
+void DataTransferHandler::recvPartScreenshot(SOCKET s, const char* pdata, SOCKADDR_IN from) {
     /*
-
+    This function recieves part of screenshot and update the part in the
+    Pixels vector buffer that recieved from pdata
     */
     std::vector<uint8_t> ScreenPacketPixel;
+
+    // legth of part
     int packLen = DATA_BUFSIZE * 5;
+    // saving the index
     int index = 0;
+    // length of all packet
     int sendLen = DATA_BUFSIZE * 5 + sizeof(int);
+    // resizing vector of part of pixels according to size
     ScreenPacketPixel.resize(sendLen);
+    // saving pointer to buffer
     char* pPacket = (char*)&ScreenPacketPixel.front();
 
+    // recieving part
     recvallUDP(s, (char*)&ScreenPacketPixel.front(), sendLen, from);
 
+    // saving index
     memcpy(&index, pPacket, sizeof(int));
-    memcpy((void*)(pdata + index * packLen), pPacket + sizeof(int), sendLen - sizeof(int));
 
-    //recvallUDP(s, (char*)&index, sizeof(int), from);
-    //recvallUDP(s, pdata + index * packLen, sizeof(packLen), from);
+    // updating buffer according to index
+    memcpy((void*)(pdata + index * packLen), pPacket + sizeof(int), sendLen - sizeof(int));
 }

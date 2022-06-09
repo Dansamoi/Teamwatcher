@@ -7,11 +7,11 @@
 #include <ctime>
 #pragma once
 class Password
+	// Class for handling password generation
 {
 public:
 	static LPWSTR generate(const int len);
 
-	static void xor_encypt(char* pdata, int buflen, char* pkey, int keylen);
 };
 
 #endif // PASSWORD_H

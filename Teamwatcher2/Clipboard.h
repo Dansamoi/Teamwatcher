@@ -5,6 +5,7 @@
 #include <windows.h>
 
 class Clipboard
+	// Class for handling clipboard saving
 {
 public:
 	static void toClipboard(HWND hwnd, LPWSTR s);
