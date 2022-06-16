@@ -8,7 +8,6 @@
 #include "Resource.h"
 #include <ws2tcpip.h>
 #include <windows.h>
-#include "CreateUI.h"
 #include <stdio.h>
 #include <vector>
 #include <map>
@@ -20,7 +19,17 @@
 #include <string>
 #include <vector>
 #include "InputSimulator.h"
+#include "UIElement.h"
+#include "Label.h"
+#include "Button.h"
+#include "TextBox.h"
+#include "UIManager.h"
+#include "Cipher.h"
 #pragma comment(lib,"WS2_32")
+
+
+// All of the UI
+UIManager* windowUI;
 
 // Declaring message handling functions for all the windows
 LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, LPARAM lparam); // for start window
@@ -40,17 +49,10 @@ RECT Rect;
 std::vector<uint8_t> Pixels = vector<uint8_t>();
 
 // Vector for receive and send part of the pixels of the image
-std::vector<uint8_t> ScreenPacketPixel = vector<uint8_t>();;
+std::vector<uint8_t> ScreenPacketPixel = vector<uint8_t>();
 
 // for checking if there is error with drawing on client screen
 int draw_error = TRUE;
-
-// Handles for the TextBoxes in the client and host windows
-HWND ipText;
-HWND joinPortText;
-HWND joinPassText;
-HWND hostPortText;
-HWND hostPassText;
 
 // generating password
 LPWSTR password = LPWSTR(Password::generate(PASSWORD_SIZE));
@@ -118,8 +120,6 @@ enum Codes {
     KEY_PRESS
 };
 
-// map for saving all HWND to buttons and other UI elements in every screen
-map<int, vector<HWND>> Menus;
 
 // int that saves the communication side
 int commSide = NON;
@@ -163,6 +163,11 @@ int addrlen;
 
 // flag for threads to continue or stop
 BOOL threadFlag = TRUE;
+
+
+// Diffie-Hellman
+long long int randomValue = Cipher::random_num();
+long long int sendingValue = Cipher::power(Cipher::G, randomValue, Cipher::P);
 
 BOOL CreateAllSockets() {
     // Function for creating the TCP and UDP sockets
@@ -289,11 +294,11 @@ void clean_exit() {
     The function called before exiting
     from the program for clean exit.
     */
+
     //closing all sockets
     closesocket(sTCP);
     closesocket(sAccept);
     closesocket(sUDP);
-    //closesocket(sAccept);
 
     threadFlag = FALSE;
     keysPressed.clear();
@@ -419,55 +424,6 @@ void recvallUDP(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN from) {
     }
 }
 
-void recvallUDPOld(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN from) {
-    /*
-    The function receive all the data according to buflen.
-    it simmilar to recvall() but for UDP sockets.
-    recvfrom() can receive just part of the data, recvallUDP() assures
-    it receives all of it.
-    */
-
-    int sizeOfFrom = sizeof(from);
-    int recieved = 0;
-    int recvLen = DATA_BUFSIZE * 10;
-    int packAmount = 1280 * 720 * 4 / (DATA_BUFSIZE * 10);
-    int error;
-    if (buflen < recvLen) {
-        while (buflen > 0) {
-            recieved = recvfrom(s, (char*)pdata, buflen, 0, (sockaddr*)&from, &sizeOfFrom);
-            if (recieved == -1) {
-                error = WSAGetLastError();
-                continue;
-            }
-            pdata += recieved;
-            buflen -= recieved;
-        }
-    }
-    else
-    {
-        for (int i = 0; i < packAmount; i++) {
-            recieved = recvfrom(s, (char*)pdata, recvLen, 0, (sockaddr*)&from, &sizeOfFrom);
-            if (recieved == -1) {
-                error = WSAGetLastError();
-                continue;
-            }
-            pdata += DATA_BUFSIZE * 10;
-            buflen -= DATA_BUFSIZE * 10;
-        }
-
-    }
-    recvLen = buflen;
-    while (buflen > 0) {
-        recieved = recvfrom(s, (char*)pdata, recvLen, 0, (sockaddr*)&from, &sizeOfFrom);
-        if (recieved == -1) {
-            error = WSAGetLastError();
-            continue;
-        }
-        pdata += recieved;
-        buflen -= recieved;
-    }
-}
-
 void recieveKeyPress(SOCKET s) {
     /*
     The function receive all the Key Press Input data,
@@ -548,6 +504,9 @@ void sendallScreenshot(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN to) 
         // setting the part of the image data
         memcpy(pPacket + sizeof(int), pdata + i* (sendLen - sizeof(int)), sendLen - sizeof(int));
 
+        // encrypting the data
+        //Cipher::xor_all(pPacket, sendLen, &key, sizeof(int));
+
         // sending the part
         while (sendLen > 0) {
             sent = sendto(s, pPacket, sendLen, 0, (sockaddr*)&to, sizeof(to));
@@ -560,7 +519,7 @@ void sendallScreenshot(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN to) 
             pPacket += sent;
             sendLen -= sent;
         }
-        if (sent == 0 || sent == SOCKET_ERROR) break; // if disconnected or error accured
+        if (sent == 0 || sent == SOCKET_ERROR) break; // if disconnected or error occurred
     }
 }
 
@@ -640,7 +599,7 @@ DWORD WINAPI serverReceive(LPVOID lpParam)
 }
 
 // Function that sends data to client
-DWORD WINAPI serverSendUDPNew(LPVOID lpParam)
+DWORD WINAPI serverSendUDP(LPVOID lpParam)
 {
     // Created client socket
     SOCKET client = *(SOCKET*)lpParam;
@@ -675,7 +634,7 @@ DWORD WINAPI serverSendUDPNew(LPVOID lpParam)
 }
 
 // Function that receive data from server
-DWORD WINAPI clientReceiveUDPNew(LPVOID lpParam)
+DWORD WINAPI clientReceiveUDP(LPVOID lpParam)
 {
     // Created server socket
     SOCKET server = *(SOCKET*)lpParam;
@@ -718,8 +677,10 @@ DWORD WINAPI clientSend(LPVOID lpParam)
 void createAllUI(HWND hwnd) {
     // Function for creating all UI for the screens
 
-    // vector for every screen
-    vector<HWND> main_menu, join_menu, host_menu;
+    windowUI = new UIManager(hwnd);
+    windowUI->AddMenu(MAIN_MENU);
+    windowUI->AddMenu(JOIN_MENU);
+    windowUI->AddMenu(HOST_MENU);
 
     // getting window size and etc.
     RECT clientRect = {};
@@ -730,40 +691,32 @@ void createAllUI(HWND hwnd) {
     // Main Menu
 
     // Creating Title
-    HWND text = CreateUI::CreateTextBox(L"TEAM WATCHER", width / 2 - 100, height / 8, 200, 30, hwnd);
-    
-    // setting font
-    HFONT hFontTitle = CreateFont(30, 0, 0, 0, FW_DEMIBOLD, FALSE, FALSE, FALSE, ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Tahoma");
-    SendMessage(text, WM_SETFONT, WPARAM(hFontTitle), TRUE);
+    windowUI->AddElement(MAIN_MENU, LABEL, LPWSTR(L"Title"), LPWSTR(L"TEAM WATCHER"), width / 2 - 100, height / 8, 200, 30, NULL);
 
-    main_menu.push_back(text);
+    // setting font
+    windowUI->getElementByName(MAIN_MENU, LPWSTR(L"Title"))->setFont(30, FW_DEMIBOLD, LPWSTR(L"Tahoma"));
 
     // Creating Buttons
-    main_menu.push_back(CreateUI::CreateButton(L"JOIN", width / 2 - 80, height / 8 + 100, 65, 25, hwnd, JOIN_MENU));
-    main_menu.push_back(CreateUI::CreateButton(L"HOST", width / 2 + 15, height / 8 + 100, 65, 25, hwnd, HOST_MENU));
-    Menus[MAIN_MENU] = main_menu;
+    windowUI->AddElement(MAIN_MENU, BUTTON, LPWSTR(L"JoinButton"), LPWSTR(L"JOIN"), width / 2 - 80, height / 8 + 100, 65, 25, JOIN_MENU);
+    windowUI->AddElement(MAIN_MENU, BUTTON, LPWSTR(L"HostButton"), LPWSTR(L"HOST"), width / 2 + 15, height / 8 + 100, 65, 25, HOST_MENU);
 
     // Join Menu
-
+    
     // Creating Back Button
-    join_menu.push_back(CreateUI::CreateButton(L"Back", X, Y, 65, 25, hwnd, MAIN_MENU));
+    windowUI->AddElement(JOIN_MENU, BUTTON, LPWSTR(L"JoinBack"), LPWSTR(L"Back"), X, Y, 65, 25, MAIN_MENU);
 
     // Creating Labels
-    join_menu.push_back(CreateUI::CreateTextBox(L"Enter Destination IP: ", X, Y + 50, 200, 25, hwnd));
-    join_menu.push_back(CreateUI::CreateTextBox(L"Enter Destination PORT: ", X, Y + 80, 200, 25, hwnd));
-    join_menu.push_back(CreateUI::CreateTextBox(L"Enter Password: ", X, Y + 110, 200, 25, hwnd));
+    windowUI->AddElement(JOIN_MENU, LABEL, LPWSTR(L"EnterIP"), LPWSTR(L"Enter Destination IP: "), X, Y + 50, 200, 25, NULL);
+    windowUI->AddElement(JOIN_MENU, LABEL, LPWSTR(L"EnterPort"), LPWSTR(L"Enter Destination PORT: "), X, Y + 80, 200, 25, NULL);
+    windowUI->AddElement(JOIN_MENU, LABEL, LPWSTR(L"EnterPass"), LPWSTR(L"Enter Password: "), X, Y + 110, 200, 25, NULL);
 
     // Creating Connect Button
-    join_menu.push_back(CreateUI::CreateButton(L"Connect", X, Y + 160, 65, 25, hwnd, CONNECTION));
+    windowUI->AddElement(JOIN_MENU, BUTTON, LPWSTR(L"Connect"), LPWSTR(L"Connect"), X, Y + 160, 65, 25, CONNECTION);
 
     // Creating Input Boxes
-    ipText = CreateUI::CreateInputBox(L"", X + 180, Y + 50, 300, 20, hwnd);
-    joinPortText = CreateUI::CreateInputBox(L"", X + 180, Y + 80, 300, 20, hwnd);
-    joinPassText = CreateUI::CreateInputBox(L"", X + 180, Y + 110, 300, 20, hwnd);
-    join_menu.push_back(ipText);
-    join_menu.push_back(joinPortText);
-    join_menu.push_back(joinPassText);
-    Menus[JOIN_MENU] = join_menu;
+    windowUI->AddElement(JOIN_MENU, TEXT_BOX, LPWSTR(L"ipText"), LPWSTR(L""), X + 180, Y + 50, 300, 20, NULL);
+    windowUI->AddElement(JOIN_MENU, TEXT_BOX, LPWSTR(L"joinPortText"), LPWSTR(L""), X + 180, Y + 80, 300, 20, NULL);
+    windowUI->AddElement(JOIN_MENU, TEXT_BOX, LPWSTR(L"joinPassText"), LPWSTR(L""), X + 180, Y + 110, 300, 20, NULL);
 
     // Host Menu
 
@@ -779,45 +732,24 @@ void createAllUI(HWND hwnd) {
     LPWSTR ptr = local;
 
     // Creating Back Button
-    host_menu.push_back(CreateUI::CreateButton(L"Back", X, Y, 65, 25, hwnd, MAIN_MENU));
+    windowUI->AddElement(HOST_MENU, BUTTON, LPWSTR(L"hostBack"), LPWSTR(L"Back"), X, Y, 65, 25, MAIN_MENU);
 
     // Creating labels
-    host_menu.push_back(CreateUI::CreateTextBox(L"Your IP is: ", X, Y + 50, 200, 25, hwnd));
-    host_menu.push_back(CreateUI::CreateTextBox(ptr, X + 180, Y + 50, 200, 25, hwnd));
-    host_menu.push_back(CreateUI::CreateTextBox(L"Enter PORT: ", X, Y + 80, 200, 25, hwnd));
-    host_menu.push_back(CreateUI::CreateTextBox(L"Your Password: ", X, Y + 110, 200, 25, hwnd));
+    windowUI->AddElement(HOST_MENU, LABEL, LPWSTR(L"YourIP"), LPWSTR(L"Your IP: "), X, Y + 50, 200, 25, NULL);
+    windowUI->AddElement(HOST_MENU, LABEL, LPWSTR(L"LocalIP"), ptr, X + 180, Y + 50, 200, 25, NULL);
+    windowUI->AddElement(HOST_MENU, LABEL, LPWSTR(L"EnterDstPort"), LPWSTR(L"Enter PORT: "), X, Y + 80, 200, 25, NULL);
+    windowUI->AddElement(HOST_MENU, LABEL, LPWSTR(L"YourPass"), LPWSTR(L"Your Password: "), X, Y + 110, 200, 25, NULL);
+    windowUI->AddElement(HOST_MENU, LABEL, LPWSTR(L"hostPassText"), password, X + 180, Y + 110, 80, 25, NULL);
 
     // Creating control password buttons
-    host_menu.push_back(CreateUI::CreateButton(L"Reset", X + 340, Y + 110, 65, 25, hwnd, RESET_PASSWORD));
-    host_menu.push_back(CreateUI::CreateButton(L"Copy", X + 415, Y + 110, 65, 25, hwnd, COPY_PASSWORD));
+    windowUI->AddElement(HOST_MENU, BUTTON, LPWSTR(L"Reset"), LPWSTR(L"Reset"), X + 340, Y + 110, 65, 25, RESET_PASSWORD);
+    windowUI->AddElement(HOST_MENU, BUTTON, LPWSTR(L"Copy"), LPWSTR(L"Copy"), X + 415, Y + 110, 65, 25, COPY_PASSWORD);
 
     // Creating Create Server Button
-    host_menu.push_back(CreateUI::CreateButton(L"Create", X, Y + 160, 65, 25, hwnd, CREATION));
+    windowUI->AddElement(HOST_MENU, BUTTON, LPWSTR(L"Create"), LPWSTR(L"Create"), X, Y + 160, 65, 25, CREATION);
 
     // Creating input boxes
-    hostPortText = CreateUI::CreateInputBox(L"", X + 180, Y + 80, 300, 20, hwnd);
-    hostPassText = CreateUI::CreateTextBox(password, X + 180, Y + 110, 80, 25, hwnd);
-    host_menu.push_back(hostPortText);
-    host_menu.push_back(hostPassText);
-    Menus[HOST_MENU] = host_menu;
-}
-
-void invisible() {
-    // Function to make all the UI elements invisible
-    
-    for (auto v : Menus) {
-        for (auto e : v.second) {
-            ShowWindow(e, SW_HIDE);
-        }
-    }
-}
-
-void visible(int menuNum) {
-    // Function to make UI elements of specific ellement to show up
-
-    for (auto e : Menus[menuNum]) {
-        ShowWindow(e, SW_SHOW);
-    }
+    windowUI->AddElement(HOST_MENU, TEXT_BOX, LPWSTR(L"hostPortText"), LPWSTR(L""), X + 180, Y + 80, 300, 20, CREATION);
 }
 
 
@@ -856,6 +788,9 @@ int WINAPI WinMain(_In_ HINSTANCE currentInstance, _In_opt_ HINSTANCE previousIn
     clean_exit();
     WSACleanup();
 
+    // deleting UI
+    //delete windowUI;
+
     return 0;
 }
 
@@ -869,10 +804,11 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
         createAllUI(hwnd);
 
         // make it all invisible
-        invisible();
+        windowUI->hideMenu(JOIN_MENU);
+        windowUI->hideMenu(HOST_MENU);
 
         // show only main menu UI
-        visible(MAIN_MENU);
+        windowUI->showMenu(MAIN_MENU);
         break;
 
     case WM_COMMAND:
@@ -881,31 +817,33 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
         {
         case MAIN_MENU:
             // START MENU
-            // Show start menu UI elements
-            invisible();
-            visible(MAIN_MENU);
+            
+            // make all UI invisible
+            windowUI->hideMenu(JOIN_MENU);
+            windowUI->hideMenu(HOST_MENU);
+
+            // show only main menu UI
+            windowUI->showMenu(MAIN_MENU);
             break;
         case HOST_MENU:
             // HOST
             // Show host menu UI elements
-            invisible();
-            visible(HOST_MENU);
+            windowUI->moveTo(MAIN_MENU, HOST_MENU);
             break;
 
         case JOIN_MENU:
             // JOIN
             // Show join menu UI elements
-            invisible();
-            visible(JOIN_MENU);
+            windowUI->moveTo(MAIN_MENU, JOIN_MENU);
             break;
 
         case CONNECTION:
             // CONNECTION PROCESS
-
+            
             // getting all the text from Input Boxes to buffers
-            gwstatIP = GetWindowText(ipText, ipSaved, 20);
-            gwstatPort = GetWindowText(joinPortText, portSaved, 20);
-            gwstatPass = GetWindowText(joinPassText, passSaved, 20);
+            gwstatIP = windowUI->getElementByName(JOIN_MENU, LPWSTR(L"ipText"))->getText(ipSaved, 20);
+            gwstatPort = windowUI->getElementByName(JOIN_MENU, LPWSTR(L"joinPortText"))->getText(portSaved, 20);
+            gwstatPass = windowUI->getElementByName(JOIN_MENU, LPWSTR(L"joinPassText"))->getText(passSaved, 8);
 
             port = _wtoi(portSaved);
 
@@ -932,6 +870,7 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
 
             // Connect to server
             error = connect(sTCP, (sockaddr*)&addr, sizeof(addr));
+
             lasterror = WSAGetLastError();
             if (error != SOCKET_ERROR) { // If connection not failed
                 commSide = CLIENT_MENU; // setting communication side
@@ -965,7 +904,7 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
                 // Creating ClientReceiving Thread
                 clientReceiving = CreateThread(NULL,
                     0,
-                    clientReceiveUDPNew,
+                    clientReceiveUDP,
                     &sUDP,
                     0,
                     &tid);
@@ -985,8 +924,8 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
         case CREATION:
             // CREATION PROCESS
             // getting all the text from Input Boxes to buffers
-            gwstatPort = GetWindowText(hostPortText, portSaved, 20);
-            gwstatPass = GetWindowText(hostPassText, passSaved, 20);
+            gwstatPort = windowUI->getElementByName(HOST_MENU, LPWSTR(L"hostPortText"))->getText(portSaved, 20);
+            gwstatPass = windowUI->getElementByName(HOST_MENU, LPWSTR(L"hostPassText"))->getText(passSaved, 8);
 
             port = _wtoi(portSaved);
 
@@ -1006,7 +945,7 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
             // Listening to incoming connection requests
             if (listen(sTCP, 1) == SOCKET_ERROR)
             {
-                // If error accured
+                // If error occurred
                 printf("listen() failed with error %d\n", WSAGetLastError());
                 MessageBox(NULL, TEXT("listen() failed with error"), NULL, MB_ICONERROR);
                 break;
@@ -1053,7 +992,7 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
             // Creating Server sending Thread
             serverSending = CreateThread(NULL,
                 0,
-                serverSendUDPNew,
+                serverSendUDP,
                 &sUDP,
                 0,
                 &tid);
@@ -1071,7 +1010,7 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
             // RESET PASSWORD PROCESS
             // Reseting password
             password = Password::generate(PASSWORD_SIZE);
-            SetWindowText(hostPassText, password);
+            windowUI->getElementByName(HOST_MENU, LPWSTR(L"hostPassText"))->setText(password);
             break;
 
         case COPY_PASSWORD:

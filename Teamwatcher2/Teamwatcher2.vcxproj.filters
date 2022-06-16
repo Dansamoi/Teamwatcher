@@ -51,6 +51,21 @@
     <ClInclude Include="Cipher.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="UIElement.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Label.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Button.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="TextBox.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="UIManager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Teamwatcher2.cpp">
@@ -80,6 +95,21 @@
     <ClCompile Include="Cipher.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="UIElement.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Label.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Button.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TextBox.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="UIManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Teamwatcher2.rc">
@@ -93,5 +123,8 @@
     <Image Include="Teamwatcher2.ico">
       <Filter>Resource Files</Filter>
     </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ClassDiagram.cd" />
   </ItemGroup>
 </Project>

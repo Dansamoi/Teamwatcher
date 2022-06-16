@@ -139,6 +139,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="Button.h" />
     <ClInclude Include="Cipher.h" />
     <ClInclude Include="Clipboard.h" />
     <ClInclude Include="CreateUI.h" />
@@ -146,22 +147,31 @@
     <ClInclude Include="DataTransferHandler.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="InputSimulator.h" />
+    <ClInclude Include="Label.h" />
     <ClInclude Include="Password.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="Screen.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="Teamwatcher2.h" />
+    <ClInclude Include="TextBox.h" />
+    <ClInclude Include="UIElement.h" />
+    <ClInclude Include="UIManager.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Button.cpp" />
     <ClCompile Include="Cipher.cpp" />
     <ClCompile Include="Clipboard.cpp" />
     <ClCompile Include="CreateUI.cpp" />
     <ClCompile Include="DataTransferHandler.cpp" />
     <ClCompile Include="InputSimulator.cpp" />
+    <ClCompile Include="Label.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Password.cpp" />
     <ClCompile Include="Screen.cpp" />
     <ClCompile Include="Teamwatcher2.cpp" />
+    <ClCompile Include="TextBox.cpp" />
+    <ClCompile Include="UIElement.cpp" />
+    <ClCompile Include="UIManager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Teamwatcher2.rc" />
@@ -169,6 +179,9 @@
   <ItemGroup>
     <Image Include="small.ico" />
     <Image Include="Teamwatcher2.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ClassDiagram.cd" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

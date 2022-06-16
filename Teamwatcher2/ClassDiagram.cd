@@ -1,0 +1,88 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ClassDiagram MajorVersion="1" MinorVersion="1" MembersFormat="FullSignature">
+  <Class Name="Button">
+    <Position X="0.5" Y="4" Width="7.25" />
+    <TypeIdentifier>
+      <HashCode>AEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAA=</HashCode>
+      <FileName>Button.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="Cipher">
+    <Position X="0.5" Y="10.5" Width="4" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAIAAAADABAAAA=</HashCode>
+      <FileName>Cipher.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="Clipboard">
+    <Position X="0.5" Y="13" Width="3" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAA=</HashCode>
+      <FileName>Clipboard.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="UIElement">
+    <Position X="8.75" Y="0.5" Width="4.5" />
+    <TypeIdentifier>
+      <HashCode>BgAAAACAAAAABAQAQAAAGBCAAQAFgIAIBAAGAQAAAAA=</HashCode>
+      <FileName>UIElement.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="TextBox">
+    <Position X="0.5" Y="2.25" Width="6.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>TextBox.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="Screen">
+    <Position X="5" Y="10.5" Width="7" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAIAAAAAAABAAAAAACAACAAAAAQAAAAAAAA=</HashCode>
+      <FileName>Screen.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="Password">
+    <Position X="4" Y="13" Width="2.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAA=</HashCode>
+      <FileName>Password.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="Label">
+    <Position X="0.5" Y="0.5" Width="6.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>Label.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="InputSimulator">
+    <Position X="8" Y="12.75" Width="4" />
+    <TypeIdentifier>
+      <HashCode>AACAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>InputSimulator.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="UIManager">
+    <Position X="0.5" Y="6.5" Width="8.25" />
+    <TypeIdentifier>
+      <HashCode>AgEAIAAAABIBIAEAAABAAAIAAAAAAAAICAAAAIAAAAA=</HashCode>
+      <FileName>UIManager.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Enum Name="UIType">
+    <Position X="9" Y="6.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAUAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAA=</HashCode>
+      <FileName>UIElement.h</FileName>
+    </TypeIdentifier>
+  </Enum>
+  <Enum Name="MenuNumbers">
+    <Position X="10.75" Y="6.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AgAAAAAAgCQAAAAAACAAAAQEAAAIAAAAEAgRAAAAAAA=</HashCode>
+      <FileName>main.cpp</FileName>
+    </TypeIdentifier>
+  </Enum>
+  <Font Name="Segoe UI" Size="9" />
+</ClassDiagram>

@@ -8,6 +8,7 @@ class Clipboard
 	// Class for handling clipboard saving
 {
 public:
+	// Save data to clipboard
 	static void toClipboard(HWND hwnd, LPWSTR s);
 };
 

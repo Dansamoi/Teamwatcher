@@ -7,8 +7,4 @@
 #define X 20
 #define Y 20
 
-#define PUBLIC_P 0xFFFFFFFF
-
-#define PUBLIC_G 9
-
 #endif // DATA_H
