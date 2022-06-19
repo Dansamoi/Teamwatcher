@@ -62,7 +62,7 @@ wchar_t ipSaved[20];
 wchar_t portSaved[20];
 wchar_t passSaved[20];
 
-// UDP socket for sending and recieving the image pixels
+// UDP socket for sending and receiving the image pixels
 SOCKET sUDP;
 
 // TCP socket for server listening for connections and for client key press input sending
@@ -92,13 +92,14 @@ SOCKADDR_IN InternetAddr, InternetAddrUDP;
 // thread id
 DWORD tid;
 
+int answer;
 
 // Register the window class Names.
 const wchar_t CLASS_NAME[] = L"Sample Window Class";
 const wchar_t CLIENT_CLASS_NAME[] = L"Client Window Class";
 const wchar_t SERVER_CLASS_NAME[] = L"Server Window Class";
 
-// enum for saving all the different menues and messages
+// enum for saving all the different menus and messages
 enum MenuNumbers {
     BASE = 0,
     MAIN_MENU = 1,
@@ -168,6 +169,11 @@ BOOL threadFlag = TRUE;
 // Diffie-Hellman
 long long int randomValue = Cipher::random_num();
 long long int sendingValue = Cipher::power(Cipher::G, randomValue, Cipher::P);
+long long int saveValue = sendingValue;
+long long int receivingValue;
+long long int theKey;
+char* key;
+wchar_t recvPass[PASSWORD_SIZE];
 
 BOOL CreateAllSockets() {
     // Function for creating the TCP and UDP sockets
@@ -295,30 +301,19 @@ void clean_exit() {
     from the program for clean exit.
     */
 
-    //closing all sockets
-    closesocket(sTCP);
-    closesocket(sAccept);
-    closesocket(sUDP);
-
     threadFlag = FALSE;
-    keysPressed.clear();
-    ScreenPacketPixel.clear();
-    Pixels.clear();
 
     // closing threads according to communication side
     switch (commSide) {
     case CLIENT_MENU:
-        TerminateThread(clientReceiving, 0);
-        TerminateThread(clientSending, 0);
-        //shutdown(sTCP, SD_BOTH);
+        // close sockets
         closesocket(sTCP);
+        closesocket(sUDP);
         break;
     case SERVER_MENU:
-        //shutdown(sAccept, SD_BOTH);
-        TerminateThread(serverReceiving, 0);
-        TerminateThread(serverSending, 0);
-        error = closesocket(sAccept);
-        error = WSAGetLastError();
+        // close sockets
+        closesocket(sAccept);
+        closesocket(sUDP);
         closesocket(sTCP);
         break;
     }
@@ -372,13 +367,13 @@ void recvall(SOCKET s, const char* pdata, int buflen) {
     it receives all of it.
     */
 
-    int recieved = 0;
+    int received = 0;
     while (buflen > 0) {
-        recieved = recv(s, (char*)pdata, buflen, 0);
-        if (recieved == SOCKET_ERROR || recieved == 0) 
+        received = recv(s, (char*)pdata, buflen, 0);
+        if (received == SOCKET_ERROR || received == 0) 
             break; // 0 - closed socket, -1 - SOCKET_ERROR
-        pdata += recieved;
-        buflen -= recieved;
+        pdata += received;
+        buflen -= received;
     }
 }
 
@@ -391,20 +386,20 @@ void recvallUDP(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN from) {
     */
 
     int sizeOfFrom = sizeof(from);
-    int recieved = 0;
+    int received = 0;
     int recvLen = DATA_BUFSIZE * 10;
     int error;
     if (buflen < recvLen) {
         while (buflen > 0) {
-            recieved = recvfrom(s, (char*)pdata, buflen, 0, (sockaddr*)&from, &sizeOfFrom);
-            if (recieved == SOCKET_ERROR) {
+            received = recvfrom(s, (char*)pdata, buflen, 0, (sockaddr*)&from, &sizeOfFrom);
+            if (received == SOCKET_ERROR) {
                 error = WSAGetLastError();
                 break;
             }
-            if (recieved == 0)
+            if (received == 0)
                 break;
-            pdata += recieved;
-            buflen -= recieved;
+            pdata += received;
+            buflen -= received;
         }
     }
     else 
@@ -412,19 +407,19 @@ void recvallUDP(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN from) {
         while (buflen > 0) {
             recvLen = DATA_BUFSIZE * 10;
             if (buflen < recvLen) recvLen = buflen;
-            recieved = recvfrom(s, (char*)pdata, recvLen, 0, (sockaddr*)&from, &sizeOfFrom);
-            if (recieved == SOCKET_ERROR) {
+            received = recvfrom(s, (char*)pdata, recvLen, 0, (sockaddr*)&from, &sizeOfFrom);
+            if (received == SOCKET_ERROR) {
                 error = WSAGetLastError();
                 continue;
             }
-            pdata += recieved;
-            buflen -= recieved;
+            pdata += received;
+            buflen -= received;
         }
     
     }
 }
 
-void recieveKeyPress(SOCKET s) {
+void receiveKeyPress(SOCKET s) {
     /*
     The function receive all the Key Press Input data,
     and simulates the input on the computer.
@@ -444,7 +439,7 @@ void recieveKeyPress(SOCKET s) {
 }
 
 
-void recieveMousePress(SOCKET s) {
+void receiveMousePress(SOCKET s) {
     /*
     The function receive all the Mouse Key Press Input data,
     and simulates the input on the computer.
@@ -456,20 +451,20 @@ void recieveMousePress(SOCKET s) {
     float xpos, ypos; // for real x, y coordinates (for new window)
     int code_up_down = 0; // for up or down code
 
-    // recieve x position
+    // receive x position
     recvall(s, (char*)&xPos, sizeof(int));
-    // recieve y position
+    // receive y position
     recvall(s, (char*)&yPos, sizeof(int));
-    // recieve width
+    // receive width
     recvall(s, (char*)&w, sizeof(int));
-    // recieve height
+    // receive height
     recvall(s, (char*)&h, sizeof(int));
 
     // calculating x and y positions
     xpos = (float)xPos / w;
     ypos = (float)yPos / h;
 
-    // recieve up or down key
+    // receive up or down key
     recvall(s, (char*)&code_up_down, sizeof(int));
 
     xpos *= 65535; // for simulate the input
@@ -505,7 +500,7 @@ void sendallScreenshot(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN to) 
         memcpy(pPacket + sizeof(int), pdata + i* (sendLen - sizeof(int)), sendLen - sizeof(int));
 
         // encrypting the data
-        //Cipher::xor_all(pPacket, sendLen, &key, sizeof(int));
+        //Cipher::xor_all(pPacket, sendLen, (char*)key, sizeof(long long int));
 
         // sending the part
         while (sendLen > 0) {
@@ -525,8 +520,8 @@ void sendallScreenshot(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN to) 
 
 void recvPartScreenshot(SOCKET s, const char* pdata, SOCKADDR_IN from) {
     /*
-    This function recieves part of screenshot and update the part in the
-    Pixels vector buffer that recieved from pdata
+    This function receives part of screenshot and update the part in the
+    Pixels vector buffer that received from pdata
     */
 
     // legth of part
@@ -540,8 +535,11 @@ void recvPartScreenshot(SOCKET s, const char* pdata, SOCKADDR_IN from) {
     // saving pointer to buffer
     char* pPacket = (char*)&ScreenPacketPixel.front();
 
-    // recieving part
+    // receiving part
     recvallUDP(s, (char*)&ScreenPacketPixel.front(), sendLen, from);
+
+    // decrypting the data
+    //Cipher::xor_all(pPacket, sendLen, (char*)key, sizeof(long long int));
 
     // saving index
     memcpy(&index, pPacket, sizeof(int));
@@ -559,7 +557,7 @@ DWORD WINAPI serverReceive(LPVOID lpParam)
     */
 
     // buffer to save command
-    int command;
+    int command = 0;
 
     // Created client socket
     SOCKET client = *(SOCKET*)lpParam;
@@ -569,32 +567,30 @@ DWORD WINAPI serverReceive(LPVOID lpParam)
 
         // If received buffer gives
         // error then return -1
-        if (recv(client, (char*)&command, sizeof(int), 0)
-            == SOCKET_ERROR) {
-            cout << "recv function failed with error "
-                << WSAGetLastError() << endl;
-            return -1;
-        }
-        // decrypting
-        // Password::xor_encypt((char*)&command, sizeof(int), (char*)password, PASSWORD_SIZE);
+        recvall(client, (char*)&command, sizeof(int));
+
+        // decrypting the data
+        //Cipher::xor_all((char*)&command, sizeof(int), (char*)key, sizeof(long long int));
         
         // execute command (exit = 0, register mouse press = 1, register key press = 2)
         switch (command)
         {
         case EXIT:
-            clean_exit();
+            SendMessage(server_hwnd, WM_CLOSE, 0, 0);
+            //clean_exit();
             break;
 
         case MOUSE_PRESS:
-            recieveMousePress(client);
+            receiveMousePress(client);
             break;
 
         case KEY_PRESS:
-            recieveKeyPress(client);
+            receiveKeyPress(client);
             break;
         }
 
     }
+    OutputDebugString(L"Exited ServerReceive Thread\n");
     return 1;
 }
 
@@ -630,6 +626,8 @@ DWORD WINAPI serverSendUDP(LPVOID lpParam)
         DeleteObject(screenshot);
         Pixels.clear();
     }
+
+    OutputDebugString(L"Exited ServerUDP Thread\n");
     return 1;
 }
 
@@ -649,6 +647,8 @@ DWORD WINAPI clientReceiveUDP(LPVOID lpParam)
         // receive part of screenshot and update it in Pixels vector
         recvPartScreenshot(server, (char*)&Pixels.front(), from);
     }
+
+    OutputDebugString(L"Exited clientReceive Thread\n");
     return 1;
 }
 
@@ -664,13 +664,14 @@ DWORD WINAPI clientSend(LPVOID lpParam)
         // sending all data from KeysPressed which saves clients input
         if (!keysPressed.empty())
         {
-            //Password::xor_encypt((char*)&keysPressed[0], sizeof(int), (char*)password, PASSWORD_SIZE);
             sendall(server, (char*)&keysPressed[0], sizeof(int));
 
             keysPressed.erase(keysPressed.begin());
 
         }
     }
+
+    OutputDebugString(L"Exited clientSend Thread\n");
     return 1;
 }
 
@@ -843,9 +844,12 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
             // getting all the text from Input Boxes to buffers
             gwstatIP = windowUI->getElementByName(JOIN_MENU, LPWSTR(L"ipText"))->getText(ipSaved, 20);
             gwstatPort = windowUI->getElementByName(JOIN_MENU, LPWSTR(L"joinPortText"))->getText(portSaved, 20);
-            gwstatPass = windowUI->getElementByName(JOIN_MENU, LPWSTR(L"joinPassText"))->getText(passSaved, 8);
+            gwstatPass = windowUI->getElementByName(JOIN_MENU, LPWSTR(L"joinPassText"))->getText(passSaved, 9);
 
             port = _wtoi(portSaved);
+
+            // password
+            password = passSaved;
 
             // Checking port
             if (port <= 0 || port > 65535) {
@@ -873,7 +877,44 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
 
             lasterror = WSAGetLastError();
             if (error != SOCKET_ERROR) { // If connection not failed
+                // Diffie-Hellman and AUTH
+                sendingValue = saveValue;
+                Cipher::xor_all((char*)&sendingValue, sizeof(long long int), (char*)password, sizeof(wchar_t) * PASSWORD_SIZE);
+                sendall(sTCP, (char*)&sendingValue, sizeof(long long int));
+
+                // decrypt
+                Cipher::xor_all((char*)&sendingValue, sizeof(long long int), (char*)password, sizeof(wchar_t) * PASSWORD_SIZE);
+
+                // receive diffie-hellman
+                recvall(sTCP, (char*)&receivingValue, sizeof(long long int));
+
+                // decrypt
+                Cipher::xor_all((char*)&receivingValue, sizeof(long long int), (char*)password, sizeof(wchar_t) * PASSWORD_SIZE);
+
+                // calculate Diffie-Hellman key
+                theKey = Cipher::power(receivingValue, randomValue, Cipher::P);
+                key = (char*)&theKey;
+
+                // sending password for auth
+                Cipher::xor_all((char*)password, sizeof(wchar_t) * PASSWORD_SIZE, key, sizeof(long long int));
+                sendall(sTCP, (char*)password, sizeof(wchar_t) * (PASSWORD_SIZE + 1));
+
+                // decrypt
+                Cipher::xor_all((char*)password, sizeof(wchar_t) * PASSWORD_SIZE, key, sizeof(long long int));
+
+                // receive answer
+                answer = 0;
+                recvall(sTCP, (char*)&answer, sizeof(int));
+
+
                 commSide = CLIENT_MENU; // setting communication side
+
+                if(answer != 0){
+                    MessageBox(NULL, TEXT("Failed to Authenticate, wrong password!"), NULL, MB_OK);
+                    clean_exit();
+                    CreateAllSockets();
+                    break;
+                }
 
                 // Hide start window
                 ShowWindow(start_hwnd, SW_HIDE);
@@ -925,7 +966,7 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
             // CREATION PROCESS
             // getting all the text from Input Boxes to buffers
             gwstatPort = windowUI->getElementByName(HOST_MENU, LPWSTR(L"hostPortText"))->getText(portSaved, 20);
-            gwstatPass = windowUI->getElementByName(HOST_MENU, LPWSTR(L"hostPassText"))->getText(passSaved, 8);
+            gwstatPass = windowUI->getElementByName(HOST_MENU, LPWSTR(L"hostPassText"))->getText(passSaved, 9);
 
             port = _wtoi(portSaved);
 
@@ -961,11 +1002,49 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
             sAccept = accept(sTCP, (sockaddr*)&to, &addrlen);
             addrlen = sizeof(to);
 
-            // get accepted socket address
-            error = getpeername(sAccept, (sockaddr*)&to, &addrlen);
-            
+            // Diffie-Hellman and AUTH
+            sendingValue = saveValue;
+
+            // receive diffie-hellman
+            recvall(sAccept, (char*)&receivingValue, sizeof(long long int));
+
+            // decrypt
+            Cipher::xor_all((char*)&receivingValue, sizeof(long long int), (char*)password, sizeof(wchar_t)* PASSWORD_SIZE);
+
+            // send diffie-hellman
+            Cipher::xor_all((char*)&sendingValue, sizeof(long long int), (char*)password, sizeof(wchar_t)* PASSWORD_SIZE);
+            sendall(sAccept, (char*)&sendingValue, sizeof(long long int));
+
+            // decrypt
+            Cipher::xor_all((char*)&sendingValue, sizeof(long long int), (char*)password, sizeof(wchar_t)* PASSWORD_SIZE);
+
+            // calculate Diffie-Hellman key
+            theKey = Cipher::power(receivingValue, randomValue, Cipher::P);
+            key = (char*)&theKey;
+
+            // receiving password for auth
+            Cipher::xor_all((char*)password, sizeof(wchar_t)* PASSWORD_SIZE, key, sizeof(long long int));
+            recvall(sAccept, (char*)recvPass, sizeof(wchar_t)* (PASSWORD_SIZE + 1));
+
+            // send answer
+            answer = wcscmp(password, recvPass);
+            sendall(sAccept, (char*)&answer, sizeof(int));
+
+            // decrypt
+            Cipher::xor_all((char*)password, sizeof(wchar_t)* PASSWORD_SIZE, key, sizeof(long long int));
+
             // Setting communication side as server side
             commSide = SERVER_MENU;
+
+            if (answer != 0) {
+                MessageBox(NULL, TEXT("Failed to Authenticate, wrong password!"), NULL, MB_OK);
+                clean_exit();
+                CreateAllSockets();
+                break;
+            }
+
+            // get accepted socket address
+            error = getpeername(sAccept, (sockaddr*)&to, &addrlen);
 
             // Hide start window
             ShowWindow(start_hwnd, SW_HIDE);
@@ -1222,9 +1301,18 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         ShowWindow(start_hwnd, SW_SHOW);
         UpdateWindow(start_hwnd);
 
+        // send exit code
+        error = EXIT;
+        sendall(sTCP, (char*)&error, sizeof(int));
+
         // Clean return to start window
         clean_exit();
         CreateAllSockets();
+
+        // clear all
+        keysPressed.clear();
+        ScreenPacketPixel.clear();
+        Pixels.clear();
         break;
 
     case WM_DESTROY:
@@ -1258,6 +1346,11 @@ LRESULT CALLBACK ServerWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         // Clean return to start window
         clean_exit();
         CreateAllSockets();
+
+        // clear all
+        keysPressed.clear();
+        ScreenPacketPixel.clear();
+        Pixels.clear();
         break;
 
     case WM_DESTROY:

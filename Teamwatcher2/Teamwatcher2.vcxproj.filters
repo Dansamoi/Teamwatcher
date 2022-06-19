@@ -27,9 +27,6 @@
     <ClInclude Include="Teamwatcher2.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="CreateUI.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="Password.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -43,9 +40,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="InputSimulator.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="DataTransferHandler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Cipher.h">
@@ -68,13 +62,10 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Teamwatcher2.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="CreateUI.cpp">
+    <ClCompile Include="Teamwatcher2.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Password.cpp">
@@ -87,9 +78,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="InputSimulator.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="DataTransferHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Cipher.cpp">

@@ -142,9 +142,7 @@
     <ClInclude Include="Button.h" />
     <ClInclude Include="Cipher.h" />
     <ClInclude Include="Clipboard.h" />
-    <ClInclude Include="CreateUI.h" />
     <ClInclude Include="Data.h" />
-    <ClInclude Include="DataTransferHandler.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="InputSimulator.h" />
     <ClInclude Include="Label.h" />
@@ -161,8 +159,6 @@
     <ClCompile Include="Button.cpp" />
     <ClCompile Include="Cipher.cpp" />
     <ClCompile Include="Clipboard.cpp" />
-    <ClCompile Include="CreateUI.cpp" />
-    <ClCompile Include="DataTransferHandler.cpp" />
     <ClCompile Include="InputSimulator.cpp" />
     <ClCompile Include="Label.cpp" />
     <ClCompile Include="main.cpp" />
