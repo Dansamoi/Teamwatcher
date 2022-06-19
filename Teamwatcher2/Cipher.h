@@ -11,8 +11,8 @@ class Cipher
     // Class of all the chiper for the data transfer
 {
 public:
-    static const long long int P = 23; // Prime number P
-    static const long long int G = 9; // Primitive root of P
+    static const long long int P = 13; // Prime number P
+    static const long long int G = 7; // Primitive root of P
 
     // Xor Encryption\Decryption function
     static void xor_all(char* pdata, int buflen, char* pkey, int keylen);

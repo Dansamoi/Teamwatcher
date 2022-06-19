@@ -4,6 +4,7 @@ void Cipher::xor_all(char* pdata, int buflen, char* pkey, int keylen)
 {
     // This function performs xor encryption\decryption
     for (int i = 0; i < buflen; i++) {
+        char h = *(pdata + i);
         *(pdata + i) = *(pdata + i) ^ *(pkey + (i % keylen));
     }
 }
@@ -21,6 +22,5 @@ long long int Cipher::power(long long int a, long long int b, long long int P)
 long long int Cipher::random_num()
 {
     // This function return a random number between 0 < x < P - 1 
-    std::srand(std::time(0));
-    return std::rand() % (P - 2) + 1;
+    return std::rand() % P + 1;
 }
