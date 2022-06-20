@@ -170,8 +170,9 @@ BOOL threadFlag = TRUE;
 long long int randomValues[PASSWORD_SIZE];
 long long int sendingValues[PASSWORD_SIZE];
 long long int receivingValues[PASSWORD_SIZE];
-char key[9];
+char key[PASSWORD_SIZE + 1];
 wchar_t recvPass[PASSWORD_SIZE + 1];
+
 
 BOOL CreateAllSockets() {
     // Function for creating the TCP and UDP sockets
@@ -417,7 +418,7 @@ void recvallUDP(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN from) {
     }
 }
 
-void prepare_df() {
+void prepare_dh() {
     // the function initialize the diffie-hellman values
 
     // initialize the random values of diffie-hellman
@@ -431,7 +432,7 @@ void prepare_df() {
     }
 }
 
-void receive_df(SOCKET s) {
+void receive_dh(SOCKET s) {
     // the function receives diffie-hellman values
     // receive
     recvall(s, (char*)receivingValues, sizeof(long long int) * PASSWORD_SIZE);
@@ -440,7 +441,7 @@ void receive_df(SOCKET s) {
     Cipher::xor_all((char*)receivingValues, sizeof(long long int) * PASSWORD_SIZE, (char*)password, sizeof(wchar_t) * PASSWORD_SIZE);
 }
 
-void send_df(SOCKET s) {
+void send_dh(SOCKET s) {
     // the function sends diffie-hellman values
     // encrypt
     Cipher::xor_all((char*)sendingValues, sizeof(long long int) * PASSWORD_SIZE, (char*)password, sizeof(wchar_t) * PASSWORD_SIZE);
@@ -452,7 +453,7 @@ void send_df(SOCKET s) {
     Cipher::xor_all((char*)sendingValues, sizeof(long long int) * PASSWORD_SIZE, (char*)password, sizeof(wchar_t) * PASSWORD_SIZE);
 }
 
-void create_secret_df() {
+void create_secret_dh() {
     // the function creates the encyption key
 
     for (int i = 0; i < PASSWORD_SIZE; i++) {
@@ -473,8 +474,14 @@ void receiveKeyPress(SOCKET s) {
     // receive key code
     recvall(s, (char*)&code, sizeof(int));
 
+    // decrypt
+    Cipher::xor_all((char*)&code, sizeof(int), key, sizeof(int));
+
     // receive if the key up or down code
     recvall(s, (char*)&up_down, sizeof(int));
+
+    // decrypt
+    Cipher::xor_all((char*)&up_down, sizeof(int), key, sizeof(int));
 
     // simulate the input
     InputSimulator::SimulateKeyInput(code, up_down);
@@ -502,12 +509,19 @@ void receiveMousePress(SOCKET s) {
     // receive height
     recvall(s, (char*)&h, sizeof(int));
 
+    // decrypt
+    Cipher::xor_all((char*)&xPos, sizeof(int), key, sizeof(int));
+    Cipher::xor_all((char*)&yPos, sizeof(int), key, sizeof(int));
+    Cipher::xor_all((char*)&w, sizeof(int), key, sizeof(int));
+    Cipher::xor_all((char*)&h, sizeof(int), key, sizeof(int));
+
     // calculating x and y positions
     xpos = (float)xPos / w;
     ypos = (float)yPos / h;
 
     // receive up or down key
     recvall(s, (char*)&code_up_down, sizeof(int));
+    Cipher::xor_all((char*)&code_up_down, sizeof(int), key, sizeof(int));
 
     xpos *= 65535; // for simulate the input
     ypos *= 65535; // for simulate the input
@@ -542,7 +556,7 @@ void sendallScreenshot(SOCKET s, const char* pdata, int buflen, SOCKADDR_IN to) 
         memcpy(pPacket + sizeof(int), pdata + i* (sendLen - sizeof(int)), sendLen - sizeof(int));
 
         // encrypting the data
-        //Cipher::xor_all(pPacket, sendLen, (char*)key, sizeof(long long int));
+        Cipher::xor_all(pPacket, sendLen, (char*)key, sizeof(long long int));
 
         // sending the part
         while (sendLen > 0) {
@@ -581,7 +595,7 @@ void recvPartScreenshot(SOCKET s, const char* pdata, SOCKADDR_IN from) {
     recvallUDP(s, (char*)&ScreenPacketPixel.front(), sendLen, from);
 
     // decrypting the data
-    //Cipher::xor_all(pPacket, sendLen, (char*)key, sizeof(long long int));
+    Cipher::xor_all(pPacket, sendLen, key, PASSWORD_SIZE);
 
     // saving index
     memcpy(&index, pPacket, sizeof(int));
@@ -590,8 +604,7 @@ void recvPartScreenshot(SOCKET s, const char* pdata, SOCKADDR_IN from) {
     memcpy((void*)(pdata + index*packLen), pPacket + sizeof(int), sendLen - sizeof(int));
 }
 
-// Function that receive data
-// from client
+// Function that receive data from client
 DWORD WINAPI serverReceive(LPVOID lpParam)
 {
     /* 
@@ -612,7 +625,7 @@ DWORD WINAPI serverReceive(LPVOID lpParam)
         recvall(client, (char*)&command, sizeof(int));
 
         // decrypting the data
-        //Cipher::xor_all((char*)&command, sizeof(int), (char*)key, sizeof(long long int));
+        Cipher::xor_all((char*)&command, sizeof(int), (char*)key, sizeof(long long int));
         
         // execute command (exit = 0, register mouse press = 1, register key press = 2)
         switch (command)
@@ -706,6 +719,9 @@ DWORD WINAPI clientSend(LPVOID lpParam)
         // sending all data from KeysPressed which saves clients input
         if (!keysPressed.empty())
         {
+            // encrypt
+            Cipher::xor_all((char*)&keysPressed[0], sizeof(int), key, sizeof(int));
+
             sendall(server, (char*)&keysPressed[0], sizeof(int));
 
             keysPressed.erase(keysPressed.begin());
@@ -923,27 +939,16 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
             lasterror = WSAGetLastError();
             if (error != SOCKET_ERROR) { // If connection not failed
                 // Diffie-Hellman and AUTH
-                prepare_df();
+                prepare_dh();
                  
-                //sendingValue = saveValue;
-                //Cipher::xor_all((char*)&sendingValue, sizeof(long long int), (char*)password, sizeof(wchar_t) * PASSWORD_SIZE);
-                //sendall(sTCP, (char*)&sendingValue, sizeof(long long int));
-                send_df(sTCP);
-                
-                // decrypt
-                //Cipher::xor_all((char*)&sendingValue, sizeof(long long int), (char*)password, sizeof(wchar_t) * PASSWORD_SIZE);
+                // sending all diffie-hellman values
+                send_dh(sTCP);
 
-                // receive diffie-hellman
-                //recvall(sTCP, (char*)&receivingValue, sizeof(long long int));
-                receive_df(sTCP);
+                // receive all diffie-hellman values
+                receive_dh(sTCP);
 
-                // decrypt
-                //Cipher::xor_all((char*)&receivingValue, sizeof(long long int), (char*)password, sizeof(wchar_t) * PASSWORD_SIZE);
-
-                // calculate Diffie-Hellman key
-                //theKey = Cipher::power(receivingValue, randomValue, Cipher::P);
-                //key = (char*)&theKey;
-                create_secret_df();
+                // create private key = secret
+                create_secret_dh();
 
                 // sending password for auth
                 Cipher::xor_all((char*)password, sizeof(wchar_t) * (PASSWORD_SIZE + 1), key, sizeof(long long int));
@@ -1053,28 +1058,17 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
             addrlen = sizeof(to);
 
             // Diffie-Hellman and AUTH
-            prepare_df();
+            prepare_dh();
             //sendingValue = saveValue;
             
-            // receive diffie-hellman
-            receive_df(sAccept);
-            //recvall(sAccept, (char*)&receivingValue, sizeof(long long int));
+            // receive diffie-hellman values
+            receive_dh(sAccept);
 
-            // decrypt
-            //Cipher::xor_all((char*)&receivingValue, sizeof(long long int), (char*)password, sizeof(wchar_t)* PASSWORD_SIZE);
-
-            // send diffie-hellman
-            //Cipher::xor_all((char*)&sendingValue, sizeof(long long int), (char*)password, sizeof(wchar_t)* PASSWORD_SIZE);
-            //sendall(sAccept, (char*)&sendingValue, sizeof(long long int));
-            send_df(sAccept);
-
-            // decrypt
-            //Cipher::xor_all((char*)&sendingValue, sizeof(long long int), (char*)password, sizeof(wchar_t)* PASSWORD_SIZE);
+            // send diffie-hellman values
+            send_dh(sAccept);
 
             // calculate Diffie-Hellman key
-            //theKey = Cipher::power(receivingValue, randomValue, Cipher::P);
-            //key = (char*)&theKey;
-            create_secret_df();
+            create_secret_dh();
 
             // receiving password for auth
             Cipher::xor_all((char*)password, sizeof(wchar_t)* (PASSWORD_SIZE), key, sizeof(long long int));
@@ -1357,6 +1351,7 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
 
         // send exit code
         error = EXIT;
+        Cipher::xor_all((char*)&error, sizeof(int), key, sizeof(int));
         sendall(sTCP, (char*)&error, sizeof(int));
 
         // Clean return to start window

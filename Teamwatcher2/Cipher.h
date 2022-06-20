@@ -8,7 +8,7 @@
 #include <ctime>
 
 class Cipher
-    // Class of all the chiper for the data transfer
+    // Class of all the cipher for the data transfer
 {
 public:
     static const long long int P = 13; // Prime number P
