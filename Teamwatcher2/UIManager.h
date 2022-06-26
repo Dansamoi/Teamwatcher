@@ -11,7 +11,7 @@
 
 class UIManager
 {
-	// Class of all the UI Managment
+	// Class for all the UI Managment
 
 private:
 	// Handle to window
