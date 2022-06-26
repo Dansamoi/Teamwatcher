@@ -29,7 +29,7 @@
 
 
 // All of the UI
-UIManager* windowUI;
+UIManager* windowUI = NULL;
 
 // Declaring message handling functions for all the windows
 LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, LPARAM lparam); // for start window
@@ -43,7 +43,7 @@ using namespace std;
 HANDLE serverSending, clientReceiving, serverReceiving, clientSending;
 
 // rect for saving client window info
-RECT Rect;
+RECT Rect = { 0 };
 
 // Vector for receive and send all the pixels of the image
 std::vector<uint8_t> Pixels = vector<uint8_t>();
@@ -63,16 +63,16 @@ wchar_t portSaved[20];
 wchar_t passSaved[20];
 
 // UDP socket for sending and receiving the image pixels
-SOCKET sUDP;
+SOCKET sUDP = NULL;
 
 // TCP socket for server listening for connections and for client key press input sending
-SOCKET sTCP;
+SOCKET sTCP = NULL;
 
 // TCP socket for server receive client key press input
-SOCKET sAccept;
+SOCKET sAccept = NULL;
 
 // SOCKADDR_IN struct to save information of client UDP socket for the server and server UDP socket for the client
-SOCKADDR_IN from, to;
+SOCKADDR_IN from = {}, to = {};
 
 // for saving GetText results
 int gwstatIP = 0;
@@ -80,19 +80,19 @@ int gwstatPort = 0;
 int gwstatPass = 0;
 
 // for saving ip and port data
-int port;
-char* ip;
+int port = 0;
+char* ip = NULL;
 
 // for error handling
-int error, lasterror = 0;
+int error = 0, lasterror = 0;
 
 // for saving address information of connected sockets
-SOCKADDR_IN InternetAddr, InternetAddrUDP;
+SOCKADDR_IN InternetAddr = { 0 }, InternetAddrUDP = { 0 };
 
 // thread id
-DWORD tid;
+DWORD tid = 0;
 
-int answer;
+int answer = 0;
 
 // Register the window class Names.
 const wchar_t CLASS_NAME[] = L"Sample Window Class";
@@ -126,52 +126,52 @@ enum Codes {
 int commSide = NON;
 
 // window classes of start window, class window and server window
-WNDCLASS wc = { };
-WNDCLASS wcClient = { };
-WNDCLASS wcServer = { };
+WNDCLASS wc = { 0 };
+WNDCLASS wcClient = { 0 };
+WNDCLASS wcServer = { 0 };
 
 // MSG for getting the Asynchronous messages and handle them
 MSG msg{};
 
 // HWND of start window, client window and server window
-HWND start_hwnd, client_hwnd, server_hwnd;
+HWND start_hwnd = NULL, client_hwnd = NULL, server_hwnd = NULL;
 
 // structure for drawing the HBITMAP on the clients windows
 PAINTSTRUCT ps = { 0 };
 
 // handle to device context
-HDC hDC;
+HDC hDC = NULL;
 
 // rect to save clients window info
 RECT rc = { 0 };
 
 // vector for saving all the keys pressed for the client
-vector<uint32_t> keysPressed;
+vector<uint32_t> keysPressed = vector<uint32_t>();
 
 // HBITMAP to save the screen of the server to show in the client window
 HBITMAP screenshot = NULL;
 
 // saving the client command
-int command;
+int command = -1;
 // saving client's mouse coordinates
-int xPos, yPos;
+int xPos = 0, yPos = 0;
 
 // for saving server and client UDP ports
-int serverUDPport, clientUDPport;
+int serverUDPport = 0, clientUDPport = 0;
 
 // for saving the address length
-int addrlen;
+int addrlen = 0;
 
 // flag for threads to continue or stop
 BOOL threadFlag = TRUE;
 
 
 // Diffie-Hellman
-long long int randomValues[PASSWORD_SIZE];
-long long int sendingValues[PASSWORD_SIZE];
-long long int receivingValues[PASSWORD_SIZE];
-char key[PASSWORD_SIZE + 1];
-wchar_t recvPass[PASSWORD_SIZE + 1];
+long long int randomValues[PASSWORD_SIZE] = {0};
+long long int sendingValues[PASSWORD_SIZE] = { 0 };
+long long int receivingValues[PASSWORD_SIZE] = { 0 };
+char key[PASSWORD_SIZE + 1] = { 0 };
+wchar_t recvPass[PASSWORD_SIZE + 1] = { 0 };
 
 
 BOOL CreateAllSockets() {
@@ -716,9 +716,13 @@ DWORD WINAPI clientSend(LPVOID lpParam)
     // Client executes continuously
     while (threadFlag) {
 
+        cout << &keysPressed << endl;
+
         // sending all data from KeysPressed which saves clients input
         if (!keysPressed.empty())
         {
+
+            cout << &keysPressed << endl;
             // encrypt
             Cipher::xor_all((char*)&keysPressed[0], sizeof(int), key, sizeof(int));
 
