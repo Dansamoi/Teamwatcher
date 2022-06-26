@@ -1369,6 +1369,20 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         break;
 
     case WM_DESTROY:
+        // send exit code
+        error = EXIT;
+        Cipher::xor_all((char*)&error, sizeof(int), key, sizeof(int));
+        sendall(sTCP, (char*)&error, sizeof(int));
+
+        // Clean return to start window
+        clean_exit();
+        CreateAllSockets();
+
+        // clear all
+        keysPressed.clear();
+        ScreenPacketPixel.clear();
+        Pixels.clear();
+
         // Destroying window
         PostQuitMessage(0);
         return 0;
