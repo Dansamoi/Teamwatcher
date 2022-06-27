@@ -4,7 +4,6 @@ void Cipher::xor_all(char* pdata, int buflen, char* pkey, int keylen)
 {
     // This function performs xor encryption\decryption
     for (int i = 0; i < buflen; i++) {
-        char h = *(pdata + i);
         *(pdata + i) = *(pdata + i) ^ *(pkey + (i % keylen));
     }
 }

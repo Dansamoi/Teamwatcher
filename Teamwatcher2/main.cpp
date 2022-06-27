@@ -28,6 +28,9 @@
 #pragma comment(lib,"WS2_32")
 
 
+// Boolean for disconnected of not
+BOOL discon = FALSE;
+
 // All of the UI
 UIManager* windowUI = NULL;
 
@@ -40,7 +43,7 @@ LRESULT CALLBACK ServerWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
 using namespace std;
 
 // Handles for all the threads
-HANDLE serverSending, clientReceiving, serverReceiving, clientSending;
+HANDLE serverSending, clientReceiving, serverReceiving, clientSending, serverListening;
 
 // rect for saving client window info
 RECT Rect = { 0 };
@@ -111,6 +114,7 @@ enum MenuNumbers {
     COPY_PASSWORD = 7,
     CLIENT_MENU = 8, SERVER_MENU = 9,
     START_MENU = 10,
+    LISTEN = 11,
     NON
 };
 
@@ -165,6 +169,8 @@ int addrlen = 0;
 // flag for threads to continue or stop
 BOOL threadFlag = TRUE;
 
+// Exit Buffer
+std::vector<uint8_t> ExitBuff = vector<uint8_t>(DATA_BUFSIZE * 5 + sizeof(int), (uint8_t)255);
 
 // Diffie-Hellman
 long long int randomValues[PASSWORD_SIZE] = {0};
@@ -311,9 +317,9 @@ void clean_exit() {
         break;
     case SERVER_MENU:
         // close sockets
+        closesocket(sTCP);
         closesocket(sAccept);
         closesocket(sUDP);
-        closesocket(sTCP);
         break;
     }
 }
@@ -600,6 +606,13 @@ void recvPartScreenshot(SOCKET s, const char* pdata, SOCKADDR_IN from) {
     // saving index
     memcpy(&index, pPacket, sizeof(int));
 
+    // checking if exited
+    if (index == -1) {
+        discon = TRUE;
+        SendMessage(client_hwnd, WM_CLOSE, 0, 0);
+        return;
+    }
+
     // updating buffer according to index
     memcpy((void*)(pdata + index*packLen), pPacket + sizeof(int), sendLen - sizeof(int));
 }
@@ -631,6 +644,7 @@ DWORD WINAPI serverReceive(LPVOID lpParam)
         switch (command)
         {
         case EXIT:
+            discon = TRUE;
             SendMessage(server_hwnd, WM_CLOSE, 0, 0);
             //clean_exit();
             break;
@@ -646,6 +660,58 @@ DWORD WINAPI serverReceive(LPVOID lpParam)
 
     }
     OutputDebugString(L"Exited ServerReceive Thread\n");
+    return 1;
+}
+
+// Function that listen for connections
+DWORD WINAPI serverListen(LPVOID lpParam)
+{
+    // Created server socket
+    SOCKET server = *(SOCKET*)lpParam;
+
+    // Listening to incoming connection requests
+    if (listen(sTCP, 1) == SOCKET_ERROR)
+    {
+        // If error occurred
+        printf("listen() failed with error %d\n", WSAGetLastError());
+        MessageBox(NULL, TEXT("listen() failed with error"), NULL, MB_ICONERROR);
+        OutputDebugString((LPWSTR)WSAGetLastError());
+        OutputDebugString(L"Exited serverListen Thread\n");
+        return 1;
+    }
+    else
+    {
+        // If listen completed without problems
+        MessageBox(NULL, TEXT("listen() is OK!"), L"", MB_OK);
+    }
+
+    // setting socket to non blocking
+    u_long mode = 1;
+    ioctlsocket(sTCP, FIONBIO, &mode);
+
+    // loop to accept
+    // Creating Accept Socket
+    while (threadFlag) {
+        addrlen = sizeof(to);
+        sAccept = accept(sTCP, (sockaddr*)&to, &addrlen);
+        addrlen = sizeof(to);
+        //OutputDebugString((LPWSTR)sAccept);
+        if (sAccept != INVALID_SOCKET && sAccept != 0xFFFFFFFF){
+            mode = 0;
+            ioctlsocket(sTCP, FIONBIO, &mode);
+            ioctlsocket(sAccept, FIONBIO, &mode);
+            SendMessage(start_hwnd, WM_COMMAND, CREATION, 0);
+            OutputDebugString(L"Exited serverListen Thread\n");
+            return 1;
+        }
+    }
+
+    // setting sockets to blocking
+    mode = 0;
+    ioctlsocket(sTCP, FIONBIO, &mode);
+    ioctlsocket(sAccept, FIONBIO, &mode);
+
+    OutputDebugString(L"Exited serverListen Thread\n");
     return 1;
 }
 
@@ -722,7 +788,7 @@ DWORD WINAPI clientSend(LPVOID lpParam)
         if (!keysPressed.empty())
         {
 
-            cout << &keysPressed << endl;
+            //cout << &keysPressed << endl;
             // encrypt
             Cipher::xor_all((char*)&keysPressed[0], sizeof(int), key, sizeof(int));
 
@@ -809,10 +875,10 @@ void createAllUI(HWND hwnd) {
     windowUI->AddElement(HOST_MENU, BUTTON, LPWSTR(L"Copy"), LPWSTR(L"Copy"), X + 415, Y + 110, 65, 25, COPY_PASSWORD);
 
     // Creating Create Server Button
-    windowUI->AddElement(HOST_MENU, BUTTON, LPWSTR(L"Create"), LPWSTR(L"Create"), X, Y + 160, 65, 25, CREATION);
+    windowUI->AddElement(HOST_MENU, BUTTON, LPWSTR(L"Create"), LPWSTR(L"Create"), X, Y + 160, 65, 25, LISTEN);
 
     // Creating input boxes
-    windowUI->AddElement(HOST_MENU, TEXT_BOX, LPWSTR(L"hostPortText"), LPWSTR(L""), X + 180, Y + 80, 300, 20, CREATION);
+    windowUI->AddElement(HOST_MENU, TEXT_BOX, LPWSTR(L"hostPortText"), LPWSTR(L""), X + 180, Y + 80, 300, 20, NULL);
 }
 
 
@@ -900,6 +966,10 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
         case JOIN_MENU:
             // JOIN
             // Show join menu UI elements
+            commSide = CLIENT_MENU;
+            clean_exit();
+            CreateAllSockets();
+            threadFlag = TRUE;
             windowUI->moveTo(MAIN_MENU, JOIN_MENU);
             break;
 
@@ -1021,8 +1091,14 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
                 MessageBox(NULL, TEXT("connection failed with error"), NULL, MB_ICONERROR); // If connection failed
             break;
 
-        case CREATION:
-            // CREATION PROCESS
+        case LISTEN:
+            // LISTEN PROCESS
+            // Setting communication side as server side
+            commSide = SERVER_MENU;
+            clean_exit();
+            CreateAllSockets();
+            threadFlag = TRUE;
+
             // getting all the text from Input Boxes to buffers
             gwstatPort = windowUI->getElementByName(HOST_MENU, LPWSTR(L"hostPortText"))->getText(portSaved, 20);
             gwstatPass = windowUI->getElementByName(HOST_MENU, LPWSTR(L"hostPassText"))->getText(passSaved, 9);
@@ -1042,24 +1118,18 @@ LRESULT CALLBACK StartWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, L
             // Binding the socket
             bind(sTCP, (PSOCKADDR)&InternetAddr, sizeof(InternetAddr));
 
-            // Listening to incoming connection requests
-            if (listen(sTCP, 1) == SOCKET_ERROR)
-            {
-                // If error occurred
-                printf("listen() failed with error %d\n", WSAGetLastError());
-                MessageBox(NULL, TEXT("listen() failed with error"), NULL, MB_ICONERROR);
-                break;
-            }
-            else
-            {
-                // If listen completed without problems
-                MessageBox(NULL, TEXT("listen() is OK!"), NULL, MB_OK);
-            }
+            // Creating Thread
+            serverListening = CreateThread(NULL,
+                0,
+                serverListen,
+                &sTCP,
+                0,
+                &tid);
+            break;
 
-            // Creating Accept Socket
-            addrlen = sizeof(to);
-            sAccept = accept(sTCP, (sockaddr*)&to, &addrlen);
-            addrlen = sizeof(to);
+        case CREATION:
+            // CREATION PROCESS
+            // getting here from LISTEN
 
             // Diffie-Hellman and AUTH
             prepare_dh();
@@ -1354,9 +1424,11 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         UpdateWindow(start_hwnd);
 
         // send exit code
-        error = EXIT;
-        Cipher::xor_all((char*)&error, sizeof(int), key, sizeof(int));
-        sendall(sTCP, (char*)&error, sizeof(int));
+        if (!discon) {
+            error = EXIT;
+            Cipher::xor_all((char*)&error, sizeof(int), key, sizeof(int));
+            sendall(sTCP, (char*)&error, sizeof(int));
+        }
 
         // Clean return to start window
         clean_exit();
@@ -1366,13 +1438,16 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         keysPressed.clear();
         ScreenPacketPixel.clear();
         Pixels.clear();
+        discon = FALSE;
         break;
 
     case WM_DESTROY:
         // send exit code
-        error = EXIT;
-        Cipher::xor_all((char*)&error, sizeof(int), key, sizeof(int));
-        sendall(sTCP, (char*)&error, sizeof(int));
+        if (!discon) {
+            error = EXIT;
+            Cipher::xor_all((char*)&error, sizeof(int), key, sizeof(int));
+            sendall(sTCP, (char*)&error, sizeof(int));
+        }
 
         // Clean return to start window
         clean_exit();
@@ -1382,6 +1457,7 @@ LRESULT CALLBACK ClientWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         keysPressed.clear();
         ScreenPacketPixel.clear();
         Pixels.clear();
+        discon = FALSE;
 
         // Destroying window
         PostQuitMessage(0);
@@ -1410,6 +1486,24 @@ LRESULT CALLBACK ServerWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         error = GetLastError();
         UpdateWindow(start_hwnd);
 
+        if (!discon) {
+            // send exit code
+
+            // setting index to -1 (exit code)
+            error = -1;
+            memcpy(&ExitBuff[0], &error, sizeof(int));
+
+            // encrypting the data
+            Cipher::xor_all((char*)&ExitBuff[0], sizeof(int), (char*)key, sizeof(long long int));
+
+            for (int i = 0; i < 1280 * 720 * 4 / (DATA_BUFSIZE * 5); i++) {
+                sendallUDP(sUDP, (char*)&ExitBuff[0], DATA_BUFSIZE * 5 + sizeof(int), to);
+            }
+
+            // decrypting the data
+            Cipher::xor_all((char*)&ExitBuff[0], sizeof(int), (char*)key, sizeof(long long int));
+        }
+
         // Clean return to start window
         clean_exit();
         CreateAllSockets();
@@ -1418,10 +1512,39 @@ LRESULT CALLBACK ServerWindowProcessMessages(HWND hwnd, UINT msg, WPARAM param, 
         keysPressed.clear();
         ScreenPacketPixel.clear();
         Pixels.clear();
+        discon = FALSE;
         break;
 
     case WM_DESTROY:
         // Destroying window
+        if (!discon) {
+            // send exit code
+
+            // setting index to -1 (exit code)
+            error = -1;
+            memcpy(&ExitBuff[0], &error, sizeof(int));
+
+            // encrypting the data
+            Cipher::xor_all((char*)&ExitBuff[0], sizeof(int), (char*)key, sizeof(long long int));
+
+            for (int i = 0; i < 1280 * 720 * 4 / (DATA_BUFSIZE * 5); i++) {
+                sendallUDP(sUDP, (char*)&ExitBuff[0], DATA_BUFSIZE * 5 + sizeof(int), to);
+            }
+
+            // decrypting the data
+            Cipher::xor_all((char*)&ExitBuff[0], sizeof(int), (char*)key, sizeof(long long int));
+        }
+
+        // Clean return to start window
+        clean_exit();
+        CreateAllSockets();
+
+        // clear all
+        keysPressed.clear();
+        ScreenPacketPixel.clear();
+        Pixels.clear();
+        discon = FALSE;
+
         PostQuitMessage(0);
         return 0;
 
