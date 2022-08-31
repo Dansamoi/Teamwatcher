@@ -12,6 +12,7 @@ The idea is similar to TeamViewer.
 The program uses TCP + UDP protocols for the networking side of the project.
 
 The encryption include shared secret using Diffie-Hellman and one of the most basic and simple symmetric encryptions - XOR encryption.
+The encryption was written as a protection from MITM attacks, etc.
 
 The program uses Asynchronous messages system, and multi-threading.
 
