@@ -3,7 +3,7 @@
 
 namespace WindowManager {
 
-    WindowClassRegister& WindowClassRegister::get_instance()
+    WindowClassRegister& WindowClassRegister::instance()
     {
         static WindowClassRegister instance;
         return instance;
