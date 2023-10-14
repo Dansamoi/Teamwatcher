@@ -17,7 +17,7 @@ namespace WindowManager {
         /*
          * Method to get instance to class register
          */
-        static WindowClassRegister& get_instance();
+        static WindowClassRegister& instance();
 
         /*
          * Registers window class
