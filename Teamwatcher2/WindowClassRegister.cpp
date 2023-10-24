@@ -1,7 +1,7 @@
 #include "WindowClassRegister.hpp"
 #include <stdexcept>
 
-namespace WindowManager {
+namespace GUI {
 
     WindowClassRegister& WindowClassRegister::instance()
     {

@@ -6,7 +6,7 @@
 #include "WindowClass.h"
 
 
-namespace WindowManager {
+namespace GUI {
 
     /*
      * Class to register new window class

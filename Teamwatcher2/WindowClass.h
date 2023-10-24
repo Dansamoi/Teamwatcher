@@ -5,7 +5,7 @@
 
 #include "Graphics.hpp"
 
-namespace WindowManager {
+namespace GUI {
 
 	using window_callback_t = std::function<LRESULT CALLBACK(HWND, UINT, WPARAM, LPARAM)>;
 
